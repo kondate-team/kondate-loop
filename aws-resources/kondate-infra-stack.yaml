@@ -30,9 +30,9 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
-    Tags:
-      - Key: Owner
-      - Value: yukanagatake
+      Tags:
+        - Key: Owner
+        - Value: yukanagatake
 
   StaticBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -50,9 +50,9 @@ Resources:
             Condition:
               StringEquals:
                 AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}'
-    Tags:
-      - Key: Owner
-      - Value: yukanagatake
+      Tags:
+        - Key: Owner
+        - Value: yukanagatake
 
   CloudFrontDistribution:
     Type: AWS::CloudFront::Distribution
@@ -76,9 +76,9 @@ Resources:
             - HEAD
           Compress: true
           CachePolicyId: !Ref StaticCachePolicy
-    Tags:
-      - Key: Owner
-      - Value: yukanagatake
+      Tags:
+        - Key: Owner
+        - Value: yukanagatake
 
   StaticCachePolicy:
     Type: AWS::CloudFront::CachePolicy
@@ -97,9 +97,9 @@ Resources:
             QueryStringBehavior: none
           EnableAcceptEncodingBrotli: true
           EnableAcceptEncodingGzip: true
-    Tags:
-      - Key: Owner
-      - Value: yukanagatake
+      Tags:
+        - Key: Owner
+        - Value: yukanagatake
 
   StaticOriginAccessControl:
     Type: AWS::CloudFront::OriginAccessControl
@@ -109,10 +109,10 @@ Resources:
         OriginAccessControlOriginType: s3
         SigningBehavior: always
         SigningProtocol: sigv4
-    Tags:
-      - Key: Owner
-      - Value: yukanagatake
-
+      Tags:
+        - Key: Owner
+        - Value: yukanagatake
+  
 
   # #BackEndresourceのため後日作成OR別テンプレートへ
   # ItemsTable:
