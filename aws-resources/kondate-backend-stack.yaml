@@ -26,6 +26,10 @@ Parameters:
     Type: String
     Default: MenuLooperCreateRecipe
     Description: Lambda function name
+  PermissionsBoundaryArn:
+    Type: String
+    Default: arn:aws:iam::978150176570:policy/PermissionsBoundaryPolicy
+    Description: Permissions boundary to satisfy IAM create role restrictions
 
 Resources:
   RecipeTable:
@@ -53,6 +57,7 @@ Resources:
   LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
+      PermissionsBoundary: !Ref PermissionsBoundaryArn
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -168,9 +173,10 @@ Resources:
 
               return _response(201, {"recipeId": recipe_id})
       Tags:
-        Owner: yukanagatake
-        SystemId: !Ref SystemId
-        Env: !Ref Env
+        - Key: Owner
+          Value: yukanagatake
+        - Key: SystemId
+          Value: !Ref SystemId
 
   CreateRecipeLogGroup:
     Type: AWS::Logs::LogGroup
