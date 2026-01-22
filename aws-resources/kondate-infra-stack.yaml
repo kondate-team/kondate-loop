@@ -7,7 +7,7 @@ Parameters:
     Type: String
     Default: '*'
     Description: Allowed origin for API CORS. Use a specific domain for production.
-  SytemId:
+  SystemId:
     Type: String
     Default: 'kondate-5036514'
     Description: SystemId
@@ -24,7 +24,7 @@ Resources:
   StaticBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BacketName: !Sub ${SystemId}-${Env}-web-backet
+      BucketName: !Sub ${SystemId}-${Env}-web-backet
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -32,7 +32,7 @@ Resources:
         RestrictPublicBuckets: true
       Tags:
         - Key: Owner
-        - Value: yukanagatake
+          Value: yukanagatake
 
   StaticBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -50,9 +50,7 @@ Resources:
             Condition:
               StringEquals:
                 AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}'
-      Tags:
-        - Key: Owner
-        - Value: yukanagatake
+
 
   CloudFrontDistribution:
     Type: AWS::CloudFront::Distribution
@@ -78,7 +76,7 @@ Resources:
           CachePolicyId: !Ref StaticCachePolicy
       Tags:
         - Key: Owner
-        - Value: yukanagatake
+          Value: yukanagatake
 
   StaticCachePolicy:
     Type: AWS::CloudFront::CachePolicy
@@ -97,9 +95,6 @@ Resources:
             QueryStringBehavior: none
           EnableAcceptEncodingBrotli: true
           EnableAcceptEncodingGzip: true
-      Tags:
-        - Key: Owner
-        - Value: yukanagatake
 
   StaticOriginAccessControl:
     Type: AWS::CloudFront::OriginAccessControl
@@ -109,9 +104,7 @@ Resources:
         OriginAccessControlOriginType: s3
         SigningBehavior: always
         SigningProtocol: sigv4
-      Tags:
-        - Key: Owner
-        - Value: yukanagatake
+ 
   
 
   # #BackEndresourceのため後日作成OR別テンプレートへ
