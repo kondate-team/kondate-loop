@@ -1,6 +1,9 @@
-CloudFormationテンプレートにおいての決まり事
-・テンプレートで定義するresourceには必ずTagsをつける。KeyはOwner、Valueはyukanagatake
-・テンプレートの初めに必ず、Parametersを定義する。内容は以下
+# CloudFormationテンプレートの決まり事
+
+- テンプレートで定義するresourceには必ずTagsを付ける（Key: `Owner`, Value: `yukanagatake`）。
+- テンプレートの先頭に必ずParametersを定義する。
+
+```yaml
 Parameters:
   SystemId:
     Type: String
@@ -13,3 +16,4 @@ Parameters:
       - 'dev'
       - 'prod'
     Description: Environment
+```
