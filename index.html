@@ -1,0 +1,782 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#c9553d" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="description" content="1週間の晩ごはんを決めて、買い物リストを自動作成。お気に入りレシピを登録して、毎週の献立づくりをラクに。" />
+    <title>Kondate Loop | 1週間の献立と買い物リスト</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥘</text></svg>" />
+  </head>
+  <body>
+    <div class="background-shape" aria-hidden="true"></div>
+    <div class="background-shape background-shape--alt" aria-hidden="true"></div>
+
+    <!-- PC Global Navigation -->
+    <nav class="global-nav" id="globalNav" hidden>
+      <div class="global-nav__inner">
+        <a href="#landing" class="global-nav__logo">
+          <span class="global-nav__logo-icon material-symbols-rounded">skillet</span>
+          <span class="global-nav__logo-text">Kondate Loop</span>
+        </a>
+        <div class="global-nav__links">
+          <button type="button" class="global-nav__link" data-nav="kondate">
+            <span class="global-nav__link-icon material-symbols-rounded">calendar_month</span>
+            献立
+          </button>
+          <button type="button" class="global-nav__link" data-nav="recipes">
+            <span class="global-nav__link-icon material-symbols-rounded">menu_book</span>
+            メニュー
+          </button>
+          <button type="button" class="global-nav__link" data-nav="weeklySets">
+            <span class="global-nav__link-icon material-symbols-rounded">auto_awesome</span>
+            テーマ献立
+          </button>
+          <button type="button" class="global-nav__link" data-nav="publicRecipes">
+            <span class="global-nav__link-icon material-symbols-rounded">search</span>
+            レシピ検索
+          </button>
+        </div>
+      </div>
+    </nav>
+
+    <div class="page">
+      <!-- Landing Section -->
+      <section class="landing" id="landing" aria-labelledby="landingTitle">
+        <div class="landing__hero">
+          <p class="eyebrow">Weekly Dinner Planner</p>
+          <h1 id="landingTitle">Kondate Loop</h1>
+          <p class="landing__lead">
+            1週間の晩ごはん、<br />
+            <strong>まとめて決めて、まとめて買い出し。</strong><br />
+            毎日「今日何作ろう」がなくなる。
+          </p>
+          <div class="landing__actions">
+            <button type="button" class="button--primary" id="enterApp">
+              今週の献立を決める
+            </button>
+            <button type="button" class="button--ghost" id="enterRecipes">
+              レシピを登録する
+            </button>
+            <p class="landing__note">アカウント登録不要・この端末だけに保存</p>
+          </div>
+        </div>
+
+        <div class="landing__overview">
+          <div class="landing__grid">
+            <article class="landing__card">
+              <span class="landing__card-icon material-symbols-rounded">menu_book</span>
+              <h2>好きなレシピを登録</h2>
+              <p>よく作る料理、お気に入りのレシピURLを保存。いつでも呼び出せる自分だけのメニュー帳に。</p>
+            </article>
+            <article class="landing__card">
+              <span class="landing__card-icon material-symbols-rounded">calendar_month</span>
+              <h2>1週間まとめて計画</h2>
+              <p>月〜日の晩ごはんを一覧で決められる。週末にまとめて買い出しも、その日に買い足しも自由。</p>
+            </article>
+            <article class="landing__card">
+              <span class="landing__card-icon material-symbols-rounded">shopping_cart</span>
+              <h2>買い物リスト自動作成</h2>
+              <p>選んだレシピの食材を自動で集計。人数に合わせて分量も計算。スマホで見ながら買い物できる。</p>
+            </article>
+            <article class="landing__card">
+              <span class="landing__card-icon material-symbols-rounded">sync</span>
+              <h2>予定変更もかんたん</h2>
+              <p>外食が入った日は献立を消すだけ。買い物リストも自動で更新されるから、ムダな買い物なし。</p>
+            </article>
+          </div>
+
+          <div class="landing__steps">
+            <h2>3ステップで使える</h2>
+            <ol class="steps">
+              <li><strong>レシピ登録</strong> — よく作る料理の材料を登録（URLから自動取得も可）</li>
+              <li><strong>献立を決める</strong> — 曜日ごとにレシピを選んで1週間分を計画</li>
+              <li><strong>買い物リストで買い出し</strong> — 必要な食材と分量を見ながらお買い物</li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <!-- App Section (献立) -->
+      <section class="app" id="app" hidden>
+        <div class="app__nav">
+          <button type="button" class="button--ghost button--small" id="backToLanding">
+            使い方
+          </button>
+          <button type="button" class="button--ghost button--small" id="openRecipesFromApp">
+            メニュー一覧
+          </button>
+          <button type="button" class="button--ghost button--small" id="openPublicRecipesFromApp">
+            レシピ検索
+          </button>
+        </div>
+
+        <header class="hero">
+          <a href="#landing" class="hero__help-link" id="helpLinkApp">
+            <span class="material-symbols-rounded">help_outline</span>
+            使い方
+          </a>
+          <div class="hero__text">
+            <p class="eyebrow">Dinner Only</p>
+            <h1>1週間の晩ご飯</h1>
+            <p class="hero__lead">
+              1食に複数品を並べて選び、<br />
+              買い物リストは自動生成。
+            </p>
+          </div>
+          <div class="hero__meta">
+            <div class="meta__item">
+              <span class="meta__label">保存</span>
+              <span class="meta__value">ローカルストレージ</span>
+            </div>
+            <div class="meta__item">
+              <span class="meta__label">週の起点</span>
+              <span class="meta__value">月曜日</span>
+            </div>
+            <div class="meta__item">
+              <span class="meta__label">買い物</span>
+              <span class="meta__value">自動生成</span>
+            </div>
+            <div class="meta__item">
+              <span class="meta__label">メニュー</span>
+              <span class="meta__value">URL + 食材</span>
+            </div>
+          </div>
+        </header>
+
+        <main class="app-content">
+          <!-- 1. 食材リスト（折りたたみ可能） -->
+          <details class="checklist-collapsible" id="shoppingCollapsible">
+            <summary class="checklist-collapsible__toggle">
+              <span class="material-symbols-rounded">shopping_cart</span>
+              <span>食材リスト</span>
+              <span class="checklist-collapsible__count" id="shoppingCount"></span>
+              <span class="material-symbols-rounded checklist-collapsible__icon">expand_more</span>
+            </summary>
+            <section class="checklist" aria-labelledby="shoppingTitle">
+              <div class="checklist__header">
+                <div>
+                  <p class="eyebrow">Shopping List</p>
+                  <h2 id="shoppingTitle">食材リスト</h2>
+                  <p class="checklist__lead">
+                    選んだレシピの食材を人数に合わせて集計
+                  </p>
+                </div>
+              </div>
+              <ul class="checklist__list" id="shoppingList"></ul>
+              <p class="checklist__empty" id="shoppingEmpty">
+                レシピを選択すると買い物リストが表示されます
+              </p>
+            </section>
+          </details>
+
+          <!-- 2. 週の開始日・操作ボタン -->
+          <section class="controls">
+            <div class="controls__left">
+              <label class="control" for="weekStart">
+                <span>週の開始日</span>
+                <input id="weekStart" type="date" />
+              </label>
+              <div class="controls__buttons">
+                <button type="button" id="prevWeek">前週</button>
+                <button type="button" class="button--primary" id="thisWeek">今週</button>
+                <button type="button" id="nextWeek">次週</button>
+              </div>
+            </div>
+            <div class="controls__right">
+              <div class="week-range" id="weekRange"></div>
+              <div class="save-status" id="saveStatus">保存済み</div>
+              <button type="button" class="button--ghost button--small" id="applySetFromKondate">セットを適用</button>
+              <button type="button" class="button--ghost button--small" id="clearWeek">クリア</button>
+            </div>
+          </section>
+
+          <!-- 3. テーマ献立バナー（適用時のみ表示） -->
+          <div class="applied-set-banner" id="appliedSetBanner" hidden>
+            <div class="applied-set-banner__content">
+              <span class="material-symbols-rounded">auto_awesome</span>
+              <span class="applied-set-banner__text">今週は <strong id="appliedSetName"></strong></span>
+            </div>
+            <div class="applied-set-banner__actions">
+              <button type="button" class="button--ghost button--small" id="saveAsMySet">マイセットとして保存</button>
+              <button type="button" class="button--ghost button--small button--danger" id="clearAppliedSet">取り消し</button>
+            </div>
+          </div>
+
+          <!-- 4. 毎日の献立 -->
+          <section class="week-grid" id="weekGrid" aria-live="polite"></section>
+        </main>
+
+        <footer class="footer">
+          <p>
+            入力は自動保存。週を切り替えると記録と食材リストが復元されます。
+          </p>
+        </footer>
+      </section>
+
+      <!-- Recipe Modal -->
+      <div class="modal" id="recipeModal" hidden>
+        <div class="modal__backdrop" id="recipeModalBackdrop"></div>
+        <div
+          class="modal__panel"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="recipeModalTitle"
+        >
+          <div class="modal__header">
+            <h2 id="recipeModalTitle">レシピを登録</h2>
+            <button
+              type="button"
+              class="button--ghost button--small"
+              id="recipeModalClose"
+            >
+              閉じる
+            </button>
+          </div>
+          <form id="recipeModalForm" class="modal__body">
+            <label class="form-field" for="recipeModalName">
+              <span>レシピ名</span>
+              <input id="recipeModalName" type="text" required />
+            </label>
+            <div class="form-field form-field--with-button">
+              <span>URL（任意）</span>
+              <div class="input-with-button">
+                <input id="recipeModalUrl" type="url" placeholder="https://..." />
+                <button type="button" class="button--ghost button--small" id="recipeModalFetch">
+                  URLから取得
+                </button>
+                <button type="button" class="button--ghost button--small" id="recipeModalTextToggle">
+                  テキストから
+                </button>
+              </div>
+              <p class="form-field__help" id="recipeModalFetchStatus"></p>
+              <div class="text-parse-area" id="recipeModalTextArea" hidden>
+                <textarea id="recipeModalTextInput" placeholder="ツイートやレシピのテキストを貼り付け..." rows="4"></textarea>
+                <button type="button" class="button--ghost button--small" id="recipeModalTextParse">
+                  テキストを解析
+                </button>
+              </div>
+            </div>
+            <label class="form-field" for="recipeModalServings">
+              <span>基準人数</span>
+              <select id="recipeModalServings">
+                <option value="1">1人前</option>
+                <option value="2" selected>2人前</option>
+                <option value="3">3人前</option>
+                <option value="4">4人前</option>
+              </select>
+            </label>
+            <div class="form-field">
+              <span>タグ（出典、ジャンルなど）</span>
+              <div class="tag-input-wrapper">
+                <div class="tag-list" id="recipeModalTagList"></div>
+                <input id="recipeModalTagInput" type="text" placeholder="タグを入力してEnter" />
+              </div>
+            </div>
+            <div class="form-field">
+              <span>食材（1行ごとに追加）</span>
+              <div class="ingredient-list__header">
+                <span>食材名</span>
+                <span>数量</span>
+                <span>単位</span>
+                <span aria-hidden="true"></span>
+              </div>
+              <div class="ingredient-list" id="recipeModalIngredientList"></div>
+              <button
+                type="button"
+                class="button--ghost button--small"
+                id="recipeModalIngredientAdd"
+              >
+                + 食材を追加
+              </button>
+            </div>
+            <label class="form-field" for="recipeModalInstructions">
+              <span>作り方メモ</span>
+              <textarea id="recipeModalInstructions" rows="6" placeholder="1. 材料を切る&#10;2. フライパンで炒める&#10;3. 調味料を加える"></textarea>
+            </label>
+            <div class="recipe-form__actions">
+              <button type="submit" class="button--primary">登録</button>
+              <button type="button" class="button--ghost" id="recipeModalCancel">
+                キャンセル
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Weekly Sets Section (1週間を選ぶ) -->
+      <section class="weekly-sets" id="weeklySets" hidden>
+        <div class="app__nav">
+          <button type="button" class="button--ghost button--small" id="backToLandingFromSets">
+            使い方
+          </button>
+          <button type="button" class="button--ghost button--small" id="openAppFromSets">
+            献立へ戻る
+          </button>
+          <button type="button" class="button--ghost button--small" id="openRecipesFromSets">
+            メニュー一覧
+          </button>
+        </div>
+
+        <header class="hero">
+          <a href="#landing" class="hero__help-link" id="helpLinkSets">
+            <span class="material-symbols-rounded">help_outline</span>
+            使い方
+          </a>
+          <div class="hero__text">
+            <p class="eyebrow">Theme Menus</p>
+            <h1>テーマ献立</h1>
+            <p class="hero__lead">
+              どんな1週間にしよう？<br />
+              テーマを選んで、ワクワクする献立を。
+            </p>
+          </div>
+          <div class="hero__meta">
+            <div class="meta__item">
+              <span class="meta__label">セット数</span>
+              <span class="meta__value" id="setCount">--</span>
+            </div>
+            <div class="meta__item">
+              <span class="meta__label">お気に入り</span>
+              <span class="meta__value" id="favoriteSetCount">0件</span>
+            </div>
+          </div>
+        </header>
+
+        <main class="weekly-sets__content">
+          <!-- お気に入りセクション -->
+          <section class="set-section" id="favoriteSetsSection" hidden>
+            <h2 class="set-section__title">
+              <span class="material-symbols-rounded">favorite</span>
+              お気に入りセット
+            </h2>
+            <div class="set-grid" id="favoriteSetsGrid"></div>
+          </section>
+
+          <!-- マイセットセクション -->
+          <section class="set-section" id="mySetsSection" hidden>
+            <h2 class="set-section__title">
+              <span class="material-symbols-rounded">person</span>
+              マイセット
+            </h2>
+            <div class="set-grid" id="mySetsGrid"></div>
+          </section>
+
+          <!-- 季節別セクション -->
+          <section class="set-section" id="seasonSetsSection">
+            <h2 class="set-section__title">
+              <span class="material-symbols-rounded">eco</span>
+              季節のおすすめ
+            </h2>
+            <div class="set-grid" id="seasonSetsGrid"></div>
+          </section>
+
+          <!-- シーン別セクション -->
+          <section class="set-section" id="sceneSetsSection">
+            <h2 class="set-section__title">
+              <span class="material-symbols-rounded">restaurant</span>
+              シーンで選ぶ
+            </h2>
+            <div class="set-grid" id="sceneSetsGrid"></div>
+          </section>
+
+          <!-- すべてのセット -->
+          <section class="set-section" id="allSetsSection">
+            <h2 class="set-section__title">
+              <span class="material-symbols-rounded">grid_view</span>
+              すべてのセット
+            </h2>
+            <div class="set-grid" id="allSetsGrid"></div>
+            <p class="set-section__empty" id="setsEmpty" hidden>
+              セットがまだありません
+            </p>
+          </section>
+        </main>
+      </section>
+
+      <!-- Set Detail Modal -->
+      <div class="modal" id="setDetailModal" hidden>
+        <div class="modal__backdrop" id="setDetailModalBackdrop"></div>
+        <div class="modal__panel modal__panel--set-detail" role="dialog" aria-modal="true" aria-labelledby="setDetailTitle">
+          <div class="modal__header">
+            <h2 id="setDetailTitle">セット詳細</h2>
+            <div class="modal__header-actions">
+              <button type="button" class="button--icon" id="setFavoriteToggle" title="お気に入り">
+                <span class="material-symbols-rounded">favorite_border</span>
+              </button>
+              <button type="button" class="button--ghost button--small" id="setDetailModalClose">
+                閉じる
+              </button>
+            </div>
+          </div>
+          <div class="modal__body set-detail" id="setDetailBody">
+            <!-- Content will be injected by JS -->
+          </div>
+          <div class="modal__footer">
+            <button type="button" class="button--primary" id="applySetButton">
+              この1週間を適用する
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Set Apply Modal -->
+      <div class="modal" id="setApplyModal" hidden>
+        <div class="modal__backdrop" id="setApplyModalBackdrop"></div>
+        <div class="modal__panel modal__panel--small" role="dialog" aria-modal="true" aria-labelledby="setApplyTitle">
+          <div class="modal__header">
+            <h2 id="setApplyTitle">セットを適用</h2>
+            <button type="button" class="button--ghost button--small" id="setApplyModalClose">
+              閉じる
+            </button>
+          </div>
+          <div class="modal__body">
+            <p class="set-apply__desc" id="setApplyDesc">どの週に適用しますか？</p>
+            <div class="set-apply__options">
+              <button type="button" class="set-apply__option set-apply__option--active" data-week="current">
+                <span class="material-symbols-rounded">today</span>
+                <span>今週</span>
+              </button>
+              <button type="button" class="set-apply__option" data-week="next">
+                <span class="material-symbols-rounded">event</span>
+                <span>来週</span>
+              </button>
+              <button type="button" class="set-apply__option" data-week="custom">
+                <span class="material-symbols-rounded">edit_calendar</span>
+                <span>日付を選ぶ</span>
+              </button>
+            </div>
+            <div class="set-apply__custom" id="setApplyCustom" hidden>
+              <label class="form-field" for="setApplyDate">
+                <span>開始日（月曜日）</span>
+                <input id="setApplyDate" type="date" />
+              </label>
+            </div>
+          </div>
+          <div class="modal__footer">
+            <button type="button" class="button--primary" id="confirmApplySet">
+              適用する
+            </button>
+            <button type="button" class="button--ghost" id="cancelApplySet">
+              キャンセル
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Save My Set Modal -->
+      <div class="modal" id="saveMySetModal" hidden>
+        <div class="modal__backdrop" id="saveMySetModalBackdrop"></div>
+        <div class="modal__panel modal__panel--small" role="dialog" aria-modal="true" aria-labelledby="saveMySetTitle">
+          <div class="modal__header">
+            <h2 id="saveMySetTitle">マイセットとして保存</h2>
+            <button type="button" class="button--ghost button--small" id="saveMySetModalClose">
+              閉じる
+            </button>
+          </div>
+          <div class="modal__body">
+            <label class="form-field" for="mySetName">
+              <span>セット名</span>
+              <input id="mySetName" type="text" placeholder="例：我が家の定番1週間" required />
+            </label>
+          </div>
+          <div class="modal__footer">
+            <button type="button" class="button--primary" id="confirmSaveMySet">
+              保存する
+            </button>
+            <button type="button" class="button--ghost" id="cancelSaveMySet">
+              キャンセル
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Public Recipes Section -->
+      <section class="recipe-db public-recipes" id="publicRecipes" hidden>
+        <div class="app__nav">
+          <button
+            type="button"
+            class="button--ghost button--small"
+            id="backToLandingFromPublic"
+          >
+            使い方
+          </button>
+          <button
+            type="button"
+            class="button--ghost button--small"
+            id="openAppFromPublic"
+          >
+            献立へ戻る
+          </button>
+          <button
+            type="button"
+            class="button--ghost button--small"
+            id="openRecipesFromPublic"
+          >
+            メニュー一覧
+          </button>
+        </div>
+
+        <header class="hero">
+          <a href="#landing" class="hero__help-link" id="helpLinkPublic">
+            <span class="material-symbols-rounded">help_outline</span>
+            使い方
+          </a>
+          <div class="hero__text">
+            <p class="eyebrow">Public Recipes</p>
+            <h1>レシピ検索</h1>
+            <p class="hero__lead">
+              定番レシピを探して、<br />
+              自分のメニューに追加しよう。
+            </p>
+          </div>
+          <div class="hero__meta">
+            <div class="meta__item">
+              <span class="meta__label">レシピ数</span>
+              <span class="meta__value" id="publicRecipeCount">--</span>
+            </div>
+            <div class="meta__item">
+              <span class="meta__label">操作</span>
+              <span class="meta__value">検索 → インポート</span>
+            </div>
+          </div>
+        </header>
+
+        <main class="recipe-db__content">
+          <section class="recipe-list public-recipe-list">
+            <div class="recipe-list__header">
+              <h2>レシピを探す</h2>
+              <input
+                id="publicRecipeSearch"
+                type="search"
+                placeholder="料理名・食材・タグで検索"
+                autocomplete="off"
+              />
+            </div>
+            <div class="tag-filter" id="publicTagFilter">
+              <span class="tag-filter__label">ジャンルで絞り込み:</span>
+              <div class="tag-filter__list" id="publicTagFilterList"></div>
+            </div>
+            <div class="recipe-list__items" id="publicRecipeList"></div>
+            <p class="recipe-list__empty" id="publicRecipeEmpty" hidden>
+              該当するレシピがありません
+            </p>
+          </section>
+        </main>
+      </section>
+
+      <!-- Recipe DB Section -->
+      <section class="recipe-db" id="recipes" hidden>
+        <div class="app__nav">
+          <button
+            type="button"
+            class="button--ghost button--small"
+            id="backToLandingFromRecipes"
+          >
+            使い方
+          </button>
+          <button
+            type="button"
+            class="button--ghost button--small"
+            id="openAppFromRecipes"
+          >
+            献立へ戻る
+          </button>
+          <button
+            type="button"
+            class="button--ghost button--small"
+            id="openPublicRecipesFromRecipes"
+          >
+            レシピ検索
+          </button>
+        </div>
+
+        <header class="hero">
+          <a href="#landing" class="hero__help-link" id="helpLinkRecipes">
+            <span class="material-symbols-rounded">help_outline</span>
+            使い方
+          </a>
+          <div class="hero__text">
+            <p class="eyebrow">Menu Collection</p>
+            <h1>メニュー一覧</h1>
+            <p class="hero__lead">
+              URLと食材を登録し、献立の候補に。
+            </p>
+          </div>
+          <div class="hero__meta">
+            <div class="meta__item">
+              <span class="meta__label">保存</span>
+              <span class="meta__value">ローカルストレージ</span>
+            </div>
+            <div class="meta__item">
+              <span class="meta__label">検索</span>
+              <span class="meta__value">料理名・食材名</span>
+            </div>
+            <div class="meta__item">
+              <span class="meta__label">URL取得</span>
+              <span class="meta__value">JSON-LD対応</span>
+            </div>
+            <div class="meta__item">
+              <span class="meta__label">連携</span>
+              <span class="meta__value">献立に自動反映</span>
+            </div>
+          </div>
+        </header>
+
+        <main class="recipe-db__content">
+          <section class="recipe-form">
+            <h2 id="recipeFormTitle">レシピを登録</h2>
+            <form id="recipeForm" class="recipe-form__body">
+              <label class="form-field" for="recipeName">
+                <span>レシピ名</span>
+                <input id="recipeName" type="text" required />
+              </label>
+              <div class="form-field form-field--with-button">
+                <span>URL（任意）</span>
+                <div class="input-with-button">
+                  <input id="recipeUrl" type="url" placeholder="https://..." />
+                  <button type="button" class="button--ghost button--small" id="recipeFetch">
+                    URLから取得
+                  </button>
+                  <button type="button" class="button--ghost button--small" id="recipeTextToggle">
+                    テキストから
+                  </button>
+                </div>
+                <p class="form-field__help" id="recipeFetchStatus"></p>
+                <div class="text-parse-area" id="recipeTextArea" hidden>
+                  <textarea id="recipeTextInput" placeholder="ツイートやレシピのテキストを貼り付け..." rows="4"></textarea>
+                  <button type="button" class="button--ghost button--small" id="recipeTextParse">
+                    テキストを解析
+                  </button>
+                </div>
+              </div>
+              <label class="form-field" for="recipeServings">
+                <span>基準人数</span>
+                <select id="recipeServings">
+                  <option value="1">1人前</option>
+                  <option value="2" selected>2人前</option>
+                  <option value="3">3人前</option>
+                  <option value="4">4人前</option>
+                </select>
+              </label>
+              <div class="form-field">
+                <span>タグ（出典、ジャンルなど）</span>
+                <div class="tag-input-wrapper">
+                  <div class="tag-list" id="recipeTagList"></div>
+                  <input id="recipeTagInput" type="text" placeholder="タグを入力してEnter" />
+                </div>
+                <p class="form-field__help">例: クラシル, 和食, 作り置き, 時短</p>
+              </div>
+              <div class="form-field">
+                <span>食材（1行ごとに追加）</span>
+                <div class="ingredient-list__header">
+                  <span>食材名</span>
+                  <span>数量</span>
+                  <span>単位</span>
+                  <span aria-hidden="true"></span>
+                </div>
+                <div class="ingredient-list" id="ingredientList"></div>
+                <button
+                  type="button"
+                  class="button--ghost button--small"
+                  id="ingredientAdd"
+                >
+                  + 食材を追加
+                </button>
+              </div>
+              <label class="form-field" for="recipeInstructions">
+                <span>作り方メモ</span>
+                <textarea id="recipeInstructions" rows="6" placeholder="1. 材料を切る&#10;2. フライパンで炒める&#10;3. 調味料を加える"></textarea>
+              </label>
+              <div class="recipe-form__actions">
+                <button type="submit" class="button--primary" id="recipeSave">
+                  登録
+                </button>
+                <button type="button" class="button--ghost" id="recipeCancel" hidden>
+                  キャンセル
+                </button>
+              </div>
+            </form>
+          </section>
+
+          <section class="recipe-list">
+            <div class="recipe-list__header">
+              <h2>メニュー表</h2>
+              <input
+                id="recipeSearch"
+                type="search"
+                placeholder="料理名・食材・タグで検索"
+                autocomplete="off"
+              />
+            </div>
+            <div class="tag-filter" id="tagFilter">
+              <span class="tag-filter__label">タグで絞り込み:</span>
+              <div class="tag-filter__list" id="tagFilterList"></div>
+            </div>
+            <div class="recipe-list__items" id="recipeList"></div>
+            <p class="recipe-list__empty" id="recipeEmpty">
+              まだメニューがありません
+            </p>
+          </section>
+        </main>
+      </section>
+    </div>
+
+    <div class="loading-overlay" id="loadingOverlay" hidden>
+      <div class="loading-spinner"></div>
+      <p class="loading-text" id="loadingText">解析中...</p>
+    </div>
+
+    <!-- Mobile Bottom Navigation -->
+    <nav class="mobile-nav" id="mobileNav" hidden aria-label="メインナビゲーション">
+      <button type="button" class="mobile-nav__item" data-nav="kondate" aria-current="page">
+        <span class="mobile-nav__icon material-symbols-rounded">calendar_month</span>
+        <span class="mobile-nav__label">献立</span>
+      </button>
+      <button type="button" class="mobile-nav__item" data-nav="recipes">
+        <span class="mobile-nav__icon material-symbols-rounded">menu_book</span>
+        <span class="mobile-nav__label">メニュー</span>
+      </button>
+      <button type="button" class="mobile-nav__item" data-nav="weeklySets">
+        <span class="mobile-nav__icon material-symbols-rounded">auto_awesome</span>
+        <span class="mobile-nav__label">テーマ</span>
+      </button>
+      <button type="button" class="mobile-nav__item" data-nav="publicRecipes">
+        <span class="mobile-nav__icon material-symbols-rounded">search</span>
+        <span class="mobile-nav__label">検索</span>
+      </button>
+    </nav>
+
+    <!-- Toast Notification -->
+    <div class="toast" id="toast" hidden>
+      <span class="toast__message" id="toastMessage"></span>
+    </div>
+
+    <!-- Recipe Detail Modal -->
+    <div class="modal" id="recipeDetailModal" hidden>
+      <div class="modal__backdrop" id="recipeDetailModalBackdrop"></div>
+      <div class="modal__panel modal__panel--detail" role="dialog" aria-modal="true" aria-labelledby="recipeDetailTitle">
+        <div class="modal__header">
+          <h2 id="recipeDetailTitle">レシピ詳細</h2>
+          <button type="button" class="button--ghost button--small" id="recipeDetailModalClose">
+            閉じる
+          </button>
+        </div>
+        <div class="modal__body" id="recipeDetailBody">
+          <!-- Content will be injected by JS -->
+        </div>
+        <div class="modal__footer">
+          <button type="button" class="button--primary" id="recipeDetailImport">
+            メニューに追加
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

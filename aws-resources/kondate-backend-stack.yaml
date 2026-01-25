@@ -28,7 +28,7 @@ Parameters:
     Description: Lambda function name
   ListFunctionName:
     Type: String
-    Default: RecipeListRecipes
+    Default: KondateListRecipes
     Description: Lambda function name for list recipes
   PermissionsBoundaryArn:
     Type: String
