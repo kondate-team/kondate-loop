@@ -27,16 +27,22 @@ Parameters:
     Description: Environment
 ```
 
-## ブランチ運用（簡易ルール）
+## ブランチ運用（必須ルール）
 
 - `main` : 本番（安定版）
 - `dev` : プレ本番 / 統合検証
-- `feature/*` : 個別作業ブランチ（必ず `dev` から作成）
+- `future/*` : 個別作業ブランチ（必ず `dev` から作成）
 - `hotfix/*` : 本番緊急修正（`main` から作成して `main` と `dev` に反映）
+
+### PR運用（必須）
+
+- `future/*` → `dev` は **必ずPR** を作成して統合する
+- `dev` → `main` も **必ずPR** を作成して統合する
+- 可能な限り GitHub Issues / Projects でタスク管理する
 
 ### リリースフロー
 
-1. `feature/*` → `dev` にPRで統合
+1. `future/*` → `dev` にPRで統合
 2. 検証OKなら `dev` → `main` にPRで昇格
 3. `main` にタグ（例: `v0.1.0`）を付与
 
