@@ -1,5 +1,3 @@
-import * as React from "react"
-
 import { Surface } from "@/components/primitives/Surface"
 import { Stack, Cluster } from "@/components/primitives/Stack"
 import { H2, Muted } from "@/components/primitives/Typography"
