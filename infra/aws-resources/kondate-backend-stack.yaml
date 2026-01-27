@@ -1,0 +1,449 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/awslabs/goformation/master/schema/cloudformation.schema.json
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Backend static  (APIGW + Lambda + DynamoDB) for put recipe
+
+Parameters:
+  SystemId:
+    Type: String
+    Default: 'kondate-5036514'
+    Description: SystemId
+  Env:
+    Type: String
+    Default: 'dev'
+    AllowedValues:
+      - 'dev'
+      - 'prod'
+    Description: Environment
+  StageName:
+    Type: String
+    Default: dev
+    Description: API stage name
+  TableName:
+    Type: String
+    Default: KondateTable
+    Description: DynamoDB table name
+  FunctionName:
+    Type: String
+    Default: KondateCreateRecipe
+    Description: Lambda function name
+  ListFunctionName:
+    Type: String
+    Default: RecipeListRecipes
+    Description: Lambda function name for list recipes
+  PermissionsBoundaryArn:
+    Type: String
+    Default: arn:aws:iam::978150176570:policy/PermissionsBoundaryPolicy
+    Description: Permissions boundary to satisfy IAM create role restrictions
+
+Resources:
+  RecipeTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref TableName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      Tags:
+        - Key: Owner
+          Value: yukanagatake
+        - Key: SystemId
+          Value: !Ref SystemId
+
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      PermissionsBoundary: !Ref PermissionsBoundaryArn
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoPutItem
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                Resource: !GetAtt RecipeTable.Arn
+      Tags:
+        - Key: Owner
+          Value: yukanagatake
+        - Key: SystemId
+          Value: !Ref SystemId
+
+  ListLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      PermissionsBoundary: !Ref PermissionsBoundaryArn
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoQuery
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:Query
+                Resource: !GetAtt RecipeTable.Arn
+      Tags:
+        - Key: Owner
+          Value: yukanagatake
+        - Key: SystemId
+          Value: !Ref SystemId
+
+
+  CreateRecipeFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref FunctionName
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      MemorySize: 256
+      Timeout: 10
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref TableName
+      Code:
+        ZipFile: |
+          import base64
+          import json
+          import os
+          import uuid
+          from datetime import datetime, timezone
+          from decimal import Decimal
+
+          import boto3
+
+          dynamodb = boto3.resource("dynamodb")
+          table = dynamodb.Table(os.environ["TABLE_NAME"])
+
+          def _response(status, body):
+              return {
+                  "statusCode": status,
+                  "headers": {
+                      "Content-Type": "application/json",
+                      "Access-Control-Allow-Origin": "*",
+                  },
+                  "body": json.dumps(body),
+              }
+
+          def handler(event, context):
+              body_str = event.get("body") or ""
+              if event.get("isBase64Encoded"):
+                  try:
+                      body_str = base64.b64decode(body_str).decode("utf-8")
+                  except Exception:
+                      return _response(400, {"message": "invalid json"})
+
+              try:
+                  payload = json.loads(body_str, parse_float=Decimal)
+                  if not isinstance(payload, dict):
+                      raise ValueError("payload is not object")
+              except Exception:
+                  return _response(400, {"message": "invalid json"})
+
+              user_id = payload.get("userId") or "anonymous"
+              recipe_id = str(uuid.uuid4())
+              now = (
+                  datetime.now(timezone.utc)
+                  .replace(microsecond=0)
+                  .isoformat()
+                  .replace("+00:00", "Z")
+              )
+
+              item = {
+                  "pk": f"USER#{user_id}",
+                  "sk": f"RECIPE#{recipe_id}",
+                  "entityType": "RECIPE",
+                  "recipeId": recipe_id,
+                  "createdAt": now,
+                  "updatedAt": now,
+                  "visibility": "PERSONAL",
+                  "raw": payload,
+              }
+
+              for key in [
+                  "recipeName",
+                  "url",
+                  "baseServings",
+                  "tags",
+                  "ingredients",
+                  "stepsMemo",
+              ]:
+                  if key in payload and payload[key] is not None:
+                      item[key] = payload[key]
+
+              try:
+                  table.put_item(Item=item)
+              except Exception:
+                  return _response(500, {"message": "internal error"})
+
+              return _response(201, {"recipeId": recipe_id})
+      Tags:
+        - Key: Owner
+          Value: yukanagatake
+        - Key: SystemId
+          Value: !Ref SystemId
+
+  ListRecipesFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref ListFunctionName
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt ListLambdaExecutionRole.Arn
+      MemorySize: 256
+      Timeout: 10
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref TableName
+      Code:
+        ZipFile: |
+          import json
+          import os
+          from decimal import Decimal
+
+          import boto3
+          from boto3.dynamodb.conditions import Key
+
+          dynamodb = boto3.resource("dynamodb")
+          table = dynamodb.Table(os.environ["TABLE_NAME"])
+
+          ALLOWED_KEYS = [
+              "recipeId",
+              "recipeName",
+              "url",
+              "baseServings",
+              "tags",
+              "ingredients",
+              "stepsMemo",
+              "createdAt",
+              "updatedAt",
+              "visibility",
+          ]
+
+          def _json_default(obj):
+              if isinstance(obj, Decimal):
+                  if obj % 1 == 0:
+                      return int(obj)
+                  return float(obj)
+              raise TypeError
+
+          def _response(status, body):
+              return {
+                  "statusCode": status,
+                  "headers": {
+                      "Content-Type": "application/json",
+                      "Access-Control-Allow-Origin": "*",
+                  },
+                  "body": json.dumps(body, default=_json_default),
+              }
+
+          def _parse_limit(params):
+              limit_val = (params or {}).get("limit")
+              try:
+                  limit = int(limit_val)
+              except Exception:
+                  return 50
+              if limit < 1:
+                  return 1
+              if limit > 200:
+                  return 200
+              return limit
+
+          def _match(item, q):
+              if not q:
+                  return True
+              ql = q.lower()
+              for key in ("recipeName", "tags", "ingredients"):
+                  if key not in item:
+                      continue
+                  value = item[key]
+                  if isinstance(value, list):
+                      joined = " ".join(str(v) for v in value if v is not None)
+                      if ql in joined.lower():
+                          return True
+                  else:
+                      if ql in str(value).lower():
+                          return True
+              return False
+
+          def _sanitize(item):
+              out = {}
+              for key in ALLOWED_KEYS:
+                  if key in item and item[key] is not None:
+                      out[key] = item[key]
+              return out
+
+          def _query(pk, limit):
+              resp = table.query(
+                  KeyConditionExpression=Key("pk").eq(pk) & Key("sk").begins_with("RECIPE#"),
+                  Limit=limit,
+              )
+              return resp.get("Items", [])
+
+          def handler(event, context):
+              params = event.get("queryStringParameters") or {}
+              user_id = (params.get("userId") or "").strip()
+              q = (params.get("q") or "").strip()
+              limit = _parse_limit(params)
+
+              public_items = _query("PUBLIC", limit)
+              public_recipes = [
+                  _sanitize(item) for item in public_items if _match(item, q)
+              ]
+
+              personal_recipes = []
+              if user_id:
+                  personal_items = _query(f"USER#{user_id}", limit)
+                  personal_recipes = [
+                      _sanitize(item) for item in personal_items if _match(item, q)
+                  ]
+
+              return _response(
+                  200,
+                  {"publicRecipes": public_recipes, "personalRecipes": personal_recipes},
+              )
+      Tags:
+        - Key: Owner
+          Value: yukanagatake
+        - Key: SystemId
+          Value: !Ref SystemId
+
+  CreateRecipeLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${FunctionName}"
+      RetentionInDays: 14
+      Tags:
+        - Key: Owner
+          Value: yukanagatake
+        - Key: SystemId
+          Value: !Ref SystemId
+
+  ListRecipesLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${ListFunctionName}"
+      RetentionInDays: 14
+      Tags:
+        - Key: Owner
+          Value: yukanagatake
+        - Key: SystemId
+          Value: !Ref SystemId
+
+
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub "${FunctionName}-api"
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - content-type
+          - x-amz-date
+          - authorization
+          - x-api-key
+          - x-amz-security-token
+        MaxAge: 86400
+      Tags:
+        Owner: yukanagatake
+        SystemId: !Ref SystemId
+        Env: !Ref Env
+
+  CreateRecipeIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CreateRecipeFunction.Arn}/invocations"
+      PayloadFormatVersion: '2.0'
+
+  ListRecipesIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ListRecipesFunction.Arn}/invocations"
+      PayloadFormatVersion: '2.0'
+
+  CreateRecipeRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "POST /recipes"
+      Target: !Sub "integrations/${CreateRecipeIntegration}"
+
+  ListRecipesRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "GET /recipes"
+      Target: !Sub "integrations/${ListRecipesIntegration}"
+
+  HttpApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: !Ref StageName
+      AutoDeploy: true
+      Tags:
+        Owner: yukanagatake
+        SystemId: !Ref SystemId
+        Env: !Ref Env
+
+  ApiInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref CreateRecipeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/POST/recipes"
+
+  ListRecipesInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ListRecipesFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/GET/recipes"
+
+Outputs:
+  ApiEndpoint:
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
+  DynamoTableName:
+    Value: !Ref TableName
