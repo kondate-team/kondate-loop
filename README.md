@@ -1,73 +1,40 @@
-# React + TypeScript + Vite
+# こんだてLoop（本番フロントエンド）
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+こんだてLoopのMVP初期リリース向けフロントエンドです。現時点はモックデータで動作し、後続でAPI接続を行う前提の構成です。
 
-Currently, two official plugins are available:
+## 開発環境
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## 環境変数
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+`.env` を作成し、`.env.example` を参考に設定してください。
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+- `VITE_API_BASE_URL` : APIベースURL
+- `VITE_API_TIMEOUT_MS` : タイムアウト(ms)
+- `VITE_API_USE_MOCK` : `true` の場合はモックデータを利用
+
+## API接続の土台
+
+- `src/api/` : APIクライアントと設定
+- `src/services/` : ドメイン別のAPI呼び出し
+- `src/types/` : API型定義
+- `src/data/` : モックデータ
+
+接続を開始する際は `VITE_API_USE_MOCK=false` に切り替え、`src/services/` のエンドポイントを調整してください。
+
+## 画面構成（MVP）
+
+- 献立表
+- レシピ帳
+- レシピカタログ
+- マイページ
+- 認証（ログイン / 新規登録）
+
+## 注意
+
+- 仕様は `INITIAL_RELEASE_REQUIREMENTS.md` と Notion のMVPエンハンスシートが正です。
+- UIルールは `UI_RULES.md` を参照してください。

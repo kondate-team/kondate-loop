@@ -1,288 +1,1473 @@
-import { useEffect, useMemo, useState } from "react"
-import {
-  Bell,
-  BookOpen,
-  CalendarDays,
-  Refrigerator,
-  ShoppingBasket,
-  Store,
-  UserRound,
-} from "lucide-react"
-import { Badge } from "@/components/ui/badge"
+import * as React from "react"
+import { Share2 } from "lucide-react"
+
+import { BottomNav, type NavItemKey } from "@/components/layout/BottomNav"
+import { RecipeDetailModal } from "@/components/domain/RecipeDetailModal"
+import { RecipeSetDetailModal } from "@/components/domain/RecipeSetDetailModal"
+import { ShoppingModal } from "@/components/domain/ShoppingModal"
+import { FridgeModal } from "@/components/domain/FridgeModal"
+import { ShareModal } from "@/components/domain/ShareModal"
+import { ShareLinkModal } from "@/components/domain/ShareLinkModal"
 import { Button } from "@/components/ui/button"
+import { Stack, Cluster } from "@/components/primitives/Stack"
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
-import { cn } from "@/lib/utils"
+  recipeCategories,
+  mockRecipes,
+  mockSets,
+  mockPublicRecipes,
+  mockPublicSets,
+  mockFridgeItems,
+  mockFollowedAuthors,
+  recipeDetailMock,
+  recipeSetDetailMock,
+} from "@/data/mockData"
+import { defaultUnitOptions } from "@/data/unitOptions"
+import { KondateScreen } from "@/screens/KondateScreen"
+import { RecipeBookScreen } from "@/screens/RecipeBookScreen"
+import { RecipeCatalogScreen } from "@/screens/RecipeCatalogScreen"
+import { MyPageScreen } from "@/screens/MyPageScreen"
+import {
+  OnboardingScreen,
+  AuthLandingScreen,
+  LoginScreen,
+  SignupScreen,
+  AuthErrorScreen,
+  SetSelectScreen,
+  SetCreateScreen,
+  RecipeAddScreen,
+  ShoppingListScreen,
+  FridgeScreen,
+  NotificationsScreen,
+  NewsDetailScreen,
+  ChefDetailScreen,
+  MembershipPlansScreen,
+  MembershipDetailScreen,
+  ArchiveScreen,
+  DiagnosisScreen,
+  PurchaseHistoryScreen,
+  PaymentHistoryScreen,
+} from "@/screens/ExtraScreens"
 
-type RecipeCard = {
-  id: string
-  title: string
-  category: string
-  time: string
-  cooked?: boolean
+export type ScreenKey =
+  | "auth"
+  | "login"
+  | "signup"
+  | "auth-error"
+  | "kondate"
+  | "book"
+  | "catalog"
+  | "mypage"
+  | "onboarding"
+  | "set-select"
+  | "set-create"
+  | "recipe-add"
+  | "shopping"
+  | "fridge"
+  | "notifications"
+  | "news-detail"
+  | "chef"
+  | "membership-plans"
+  | "membership-detail"
+  | "archive"
+  | "diagnosis"
+  | "purchase"
+  | "payment"
+
+const rootScreens: ScreenKey[] = ["kondate", "book", "catalog", "mypage"]
+
+type Ingredient = { name: string; amount: number; unit: string }
+type Recipe = (typeof mockRecipes)[number] & { source?: "catalog" }
+type RecipeSet = (typeof mockSets)[number] & { source?: "catalog" }
+type PublicRecipe = (typeof mockPublicRecipes)[number]
+type PublicSet = (typeof mockPublicSets)[number]
+type AnySet = RecipeSet | PublicSet
+type SetTemplate = {
+  title?: string
+  author?: string
+  description?: string
+  recipeIds?: string[]
+  imageUrl?: string
 }
 
-type MealSet = {
-  id: string
-  name: string
-  description: string
-  total: number
-  cards: RecipeCard[]
-}
-
-type AppState = {
-  currentSet: MealSet | null
-  nextSet: MealSet | null
-  shoppingCount: number
-}
-
-const STORAGE_KEY = "kondate-v2-state"
-
-const defaultState: AppState = {
-  currentSet: {
-    id: "set-1",
-    name: "平日シンプル",
-    description: "今日の手札",
-    total: 5,
-    cards: [
-      { id: "r1", title: "鶏の照り焼き", category: "主菜", time: "20分" },
-      { id: "r2", title: "豆腐の味噌汁", category: "汁物", time: "10分" },
-      {
-        id: "r3",
-        title: "温野菜サラダ",
-        category: "副菜",
-        time: "15分",
-        cooked: true,
-      },
-    ],
-  },
-  nextSet: {
-    id: "set-2",
-    name: "週末のごちそうセット",
-    description: "次に回すセット",
-    total: 5,
-    cards: [],
-  },
-  shoppingCount: 5,
-}
-
-function App() {
-  const [activeTab, setActiveTab] = useState<
-    "kondate" | "book" | "catalog" | "mypage"
-  >("kondate")
-  const [state, setState] = useState<AppState>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved) {
-      try {
-        return JSON.parse(saved) as AppState
-      } catch {
-        return defaultState
+const buildShoppingItemsFromSet = (
+  setItem: { recipeIds?: string[] } | null,
+  recipesPool: { id: string; ingredients?: Ingredient[] }[],
+  fridgeList: { name: string; amount: number; unit: string }[]
+) => {
+  if (!setItem?.recipeIds?.length) return []
+  const totals = new Map<string, { name: string; unit: string; amount: number }>()
+  setItem.recipeIds.forEach((id) => {
+    const recipe = recipesPool.find((item) => item.id === id)
+    if (!recipe?.ingredients?.length) return
+    recipe.ingredients.forEach((ing) => {
+      const key = `${ing.name}-${ing.unit}`
+      const current = totals.get(key)
+      if (current) {
+        current.amount += ing.amount
+      } else {
+        totals.set(key, { name: ing.name, unit: ing.unit, amount: ing.amount })
       }
-    }
-    return defaultState
+    })
   })
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-  }, [state])
+  const fridgeMap = new Map<string, number>()
+  fridgeList.forEach((item) => {
+    const key = `${item.name}-${item.unit}`
+    fridgeMap.set(key, (fridgeMap.get(key) ?? 0) + item.amount)
+  })
 
-  const currentSet = state.currentSet
-  const nextSet = state.nextSet
-  const shoppingCount = state.shoppingCount
-  const isEmpty = useMemo(() => !currentSet, [currentSet])
+  return Array.from(totals.entries())
+    .map(([key, value]) => {
+      const fridgeAmount = fridgeMap.get(key) ?? 0
+      const remaining = value.amount - fridgeAmount
+      return remaining > 0
+        ? {
+            id: `i-${key}`,
+            name: value.name,
+            amount: remaining,
+            unit: value.unit,
+            key,
+            isExtra: false,
+            checked: false,
+          }
+        : null
+    })
+    .filter(Boolean)
+}
+
+export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = React.useState(false)
+  const [hasOnboarded, setHasOnboarded] = React.useState(true)
+  const [screen, setScreen] = React.useState<ScreenKey>("auth")
+  const [, setHistory] = React.useState<ScreenKey[]>(["auth"])
+  const [authError, setAuthError] = React.useState<{ title: string; message: string } | null>(null)
+  const [logoutConfirm, setLogoutConfirm] = React.useState(false)
+  const [categories, setCategories] = React.useState(() => recipeCategories)
+  const [myRecipes, setMyRecipes] = React.useState<Recipe[]>(() => mockRecipes)
+  const [mySets, setMySets] = React.useState<RecipeSet[]>(() => mockSets)
+  const [publicRecipes, setPublicRecipes] = React.useState<PublicRecipe[]>(() => mockPublicRecipes)
+  const [publicSets, setPublicSets] = React.useState<PublicSet[]>(() => mockPublicSets)
+  const [selectedRecipeId, setSelectedRecipeId] = React.useState<string | null>(null)
+  const [selectedSetId, setSelectedSetId] = React.useState<string | null>(null)
+  const [recipeContext, setRecipeContext] = React.useState<"kondate" | "book" | "catalog" | "set">("kondate")
+  const [setContext, setSetContext] = React.useState<"kondate" | "book" | "catalog">("kondate")
+  const [setDetailOpen, setSetDetailOpen] = React.useState(false)
+  const [returnToSetId, setReturnToSetId] = React.useState<string | null>(null)
+  const [activeNews, setActiveNews] = React.useState<{
+    title: string
+    message: string
+    sourceName?: string
+    createdAt?: string
+  } | null>(null)
+  const [activeChef, setActiveChef] = React.useState<{ name?: string } | null>(null)
+  const [cookedIds, setCookedIds] = React.useState<Set<string>>(new Set(["r2"]))
+  const [shoppingOpen, setShoppingOpen] = React.useState(false)
+  const [fridgeOpen, setFridgeOpen] = React.useState(false)
+  const [toastMessage, setToastMessage] = React.useState<string | null>(null)
+  const [unitOptions, setUnitOptions] = React.useState(() => defaultUnitOptions)
+  const [purchaseConfirm, setPurchaseConfirm] = React.useState<{
+    type: "recipe" | "set"
+    id: string
+    priceLabel?: string
+  } | null>(null)
+  const [purchasePrompt, setPurchasePrompt] = React.useState<{
+    type: "recipe" | "set"
+    id: string
+  } | null>(null)
+  const [shareTarget, setShareTarget] = React.useState<{
+    type: "recipe" | "set"
+    id: string
+  } | null>(null)
+  const [shareLink, setShareLink] = React.useState<{
+    url: string
+    title: string
+    type: "recipe" | "set"
+  } | null>(null)
+  const [completionOpen, setCompletionOpen] = React.useState(false)
+  const [currentSet, setCurrentSet] = React.useState<AnySet | null>(() => mockSets[0] ?? null)
+  const [nextSet, setNextSet] = React.useState<AnySet | null>(() => mockSets[1] ?? null)
+  const [selectingFor, setSelectingFor] = React.useState<"current" | "next">("current")
+  const [setTemplate, setSetTemplate] = React.useState<SetTemplate | null>(null)
+  const [fridgeItems, setFridgeItems] = React.useState(() => mockFridgeItems)
+  const [deletedFridgeItems, setDeletedFridgeItems] = React.useState<
+    { id: string; name: string; amount: number; unit: string; deletedAt: string }[]
+  >([])
+  const categoryThemePalette = React.useMemo(
+    () =>
+      recipeCategories
+        .filter((item) => item.id !== "all")
+        .map(
+          ({
+            colorClass,
+            activeColorClass,
+            textClass,
+            panelClass,
+            panelRecipeClass,
+            panelSetClass,
+          }) => ({
+            colorClass,
+            activeColorClass: activeColorClass ?? colorClass,
+            textClass,
+            panelClass,
+            panelRecipeClass,
+            panelSetClass,
+          })
+        ),
+    []
+  )
+  const createCategory = React.useCallback(
+    (label: string) => {
+      const customCount = categories.filter((item) => !item.isDefault).length
+      const theme = categoryThemePalette[customCount % categoryThemePalette.length]
+      return {
+        id: `c-${Date.now()}`,
+        label,
+        isDefault: false,
+        isHidden: false,
+        colorClass: theme?.colorClass,
+        activeColorClass: theme?.activeColorClass ?? theme?.colorClass,
+        textClass: theme?.textClass,
+        panelClass: theme?.panelClass,
+        panelRecipeClass: theme?.panelRecipeClass,
+        panelSetClass: theme?.panelSetClass,
+      }
+    },
+    [categories, categoryThemePalette]
+  )
+  const registerUnitOption = React.useCallback((value: string) => {
+    const trimmed = value.trim()
+    if (!trimmed) return
+    setUnitOptions((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]))
+  }, [])
+  const recipePool = React.useMemo(() => {
+    const map = new Map<string, (typeof myRecipes)[number]>()
+    ;[...myRecipes, ...publicRecipes].forEach((recipe) => {
+      if (!map.has(recipe.id)) {
+        map.set(recipe.id, recipe)
+      }
+    })
+    return Array.from(map.values())
+  }, [myRecipes, publicRecipes])
+  const buildShoppingItems = React.useCallback(
+    (setItem: { recipeIds?: string[] } | null, fridgeList: typeof mockFridgeItems) =>
+      buildShoppingItemsFromSet(setItem, recipePool, fridgeList),
+    [recipePool]
+  )
+  const [shoppingItems, setShoppingItems] = React.useState(() =>
+    buildShoppingItemsFromSet(mockSets[0] ?? null, mockRecipes, mockFridgeItems)
+  )
+
+  const navigate = React.useCallback((next: ScreenKey, reset = false) => {
+    if (reset) {
+      setHistory([next])
+      setScreen(next)
+      return
+    }
+    setHistory((prev) => [...prev, next])
+    setScreen(next)
+  }, [])
+
+  const completeLogin = (firstTime?: boolean) => {
+    setIsAuthenticated(true)
+    if (firstTime) {
+      setHasOnboarded(false)
+      navigate("onboarding", true)
+      return
+    }
+    navigate(hasOnboarded ? "kondate" : "onboarding", true)
+  }
+
+  const handleLogin = (email: string, password: string) => {
+    if (!email.trim() || !password.trim()) {
+      setAuthError({
+        title: "ログインに失敗しました",
+        message: "メールアドレスとパスワードを入力してください。",
+      })
+      navigate("auth-error")
+      return
+    }
+    completeLogin(false)
+  }
+
+  const handleSignup = (name: string, email: string, password: string) => {
+    if (!name.trim() || !email.trim() || !password.trim()) {
+      setAuthError({
+        title: "登録に失敗しました",
+        message: "入力内容を確認して、もう一度お試しください。",
+      })
+      navigate("auth-error")
+      return
+    }
+    completeLogin(true)
+  }
+
+  const handleLogout = () => {
+    setIsAuthenticated(false)
+    navigate("auth", true)
+  }
+
+  React.useEffect(() => {
+    if (!toastMessage) return
+    const timer = window.setTimeout(() => setToastMessage(null), 2200)
+    return () => window.clearTimeout(timer)
+  }, [toastMessage])
+
+  const goBack = React.useCallback(() => {
+    setHistory((prev) => {
+      if (prev.length <= 1) return prev
+      const nextHistory = prev.slice(0, -1)
+      setScreen(nextHistory[nextHistory.length - 1])
+      return nextHistory
+    })
+  }, [])
+
+  const handleNav = (next: NavItemKey) => {
+    const map: Record<NavItemKey, ScreenKey> = {
+      kondate: "kondate",
+      book: "book",
+      catalog: "catalog",
+      mypage: "mypage",
+    }
+    navigate(map[next], true)
+  }
+
+  const recipesWithCooked = recipePool.map((recipe) => ({
+    ...recipe,
+    cooked: cookedIds.has(recipe.id),
+  }))
+  const kondateRecipes = React.useMemo(
+    () => {
+      const currentSetRecipeIds = currentSet?.recipeIds ?? []
+      const base = currentSetRecipeIds.length
+        ? recipesWithCooked.filter((recipe) => currentSetRecipeIds.includes(recipe.id))
+        : recipesWithCooked
+      return [...base].sort((a, b) => {
+        if (a.cooked === b.cooked) return 0
+        return a.cooked ? 1 : -1
+      })
+    },
+    [currentSet, recipesWithCooked]
+  )
+
+  const selectedRecipe = selectedRecipeId
+    ? (recipeContext === "catalog"
+        ? publicRecipes.find((recipe) => recipe.id === selectedRecipeId)
+        : recipeContext === "set"
+          ? myRecipes.find((recipe) => recipe.id === selectedRecipeId) ??
+            publicRecipes.find((recipe) => recipe.id === selectedRecipeId)
+          : myRecipes.find((recipe) => recipe.id === selectedRecipeId))
+    : null
+  const recipeDetailData = selectedRecipe
+    ? {
+        ...recipeDetailMock,
+        title: selectedRecipe.title,
+        author: selectedRecipe.author ?? recipeDetailMock.author,
+        sourceUrl: selectedRecipe.sourceUrl ?? recipeDetailMock.sourceUrl,
+        tags: selectedRecipe.tags ?? recipeDetailMock.tags,
+        statusBadges: selectedRecipe.statusBadges ?? recipeDetailMock.statusBadges,
+        imageUrl: selectedRecipe.imageUrl ?? recipeDetailMock.imageUrl,
+      }
+    : recipeDetailMock
+
+  const selectedSet = selectedSetId
+    ? (setContext === "catalog"
+        ? publicSets.find((set) => set.id === selectedSetId)
+        : mySets.find((set) => set.id === selectedSetId))
+    : null
+  const setDetailData = selectedSet
+    ? {
+        ...recipeSetDetailMock,
+        title: selectedSet.title,
+        author: selectedSet.author ?? recipeSetDetailMock.author,
+        tags: selectedSet.tags ?? recipeSetDetailMock.tags,
+        count: selectedSet.count ?? recipeSetDetailMock.count,
+        imageUrl: selectedSet.imageUrl ?? recipeSetDetailMock.imageUrl,
+        statusBadges: selectedSet.statusBadges ?? recipeSetDetailMock.statusBadges,
+      }
+    : recipeSetDetailMock
+
+  const membershipAvailable = false
+  const isMember = false
+  const getAccessInfo = (
+    badges?: { label: string; variant: "free" | "price" | "purchased" | "membership" | "status" }[]
+  ) => {
+    const labels = badges?.map((badge) => badge.label) ?? []
+    const hasPrice = labels.some((label) => label.includes("¥"))
+    const hasMembership = labels.includes("限定")
+    const isPurchased = labels.includes("購入済み")
+    const isFree = labels.includes("フリー")
+    const accessible = isFree || isPurchased || (hasMembership && isMember)
+    const priceLabel = labels.find((label) => label.includes("¥"))
+    return {
+      hasPrice,
+      hasMembership,
+      isPurchased,
+      isFree,
+      accessible,
+      priceLabel,
+    }
+  }
+
+  const recipeAccess = getAccessInfo(selectedRecipe?.statusBadges)
+  const setAccess = getAccessInfo(selectedSet?.statusBadges)
+  const priceBadge = recipeAccess.priceLabel
+  const canShareRecipeInBook =
+    recipeContext === "book" || (recipeContext === "set" && setContext === "book")
+  const canShareSetInBook = setContext === "book"
+
+  const savedRecipeIds = React.useMemo(
+    () => new Set(myRecipes.map((recipe) => recipe.id)),
+    [myRecipes]
+  )
+  const savedSetIds = React.useMemo(
+    () => new Set(mySets.map((set) => set.id)),
+    [mySets]
+  )
+  const shareRecipe =
+    shareTarget?.type === "recipe"
+      ? recipePool.find((item) => item.id === shareTarget.id)
+      : null
+  const shareSet =
+    shareTarget?.type === "set" ? mySets.find((item) => item.id === shareTarget.id) : null
+  const shareLinkTitle = shareLink?.title ?? ""
+  const shareLinkTypeLabel = shareLink?.type === "set" ? "レシピセット" : "レシピ"
+  const markPurchasedBadges = (
+    badges?: { label: string; variant: "free" | "price" | "purchased" | "membership" | "status" }[]
+  ) => {
+    const filtered = (badges ?? []).filter(
+      (badge) => !["フリー", "購入済み"].includes(badge.label) && !badge.label.includes("¥")
+    )
+    return [...filtered, { label: "購入済み", variant: "purchased" as const }]
+  }
+
+  function handleSaveRecipeFromCatalog(id: string) {
+    if (savedRecipeIds.has(id)) {
+      setToastMessage("保存済みです")
+      return
+    }
+    const recipe = publicRecipes.find((item) => item.id === id)
+    if (!recipe) return
+    const access = getAccessInfo(recipe.statusBadges)
+    if (!access.accessible) {
+      if (access.hasMembership && !access.hasPrice) {
+        setToastMessage("メンバー限定は準備中です")
+      } else {
+        setToastMessage("購入すると保存できます")
+      }
+      return
+    }
+    setMyRecipes((prev) => [...prev, { ...recipe, source: "catalog" }])
+    setToastMessage("レシピ帳に保存しました")
+  }
+
+  function handleSaveSetFromCatalog(id: string) {
+    if (savedSetIds.has(id)) {
+      setToastMessage("保存済みです")
+      return
+    }
+    const setItem = publicSets.find((item) => item.id === id)
+    if (!setItem) return
+    const access = getAccessInfo(setItem.statusBadges)
+    if (!access.accessible) {
+      if (access.hasMembership && !access.hasPrice) {
+        setToastMessage("メンバー限定は準備中です")
+      } else {
+        setToastMessage("購入すると保存できます")
+      }
+      return
+    }
+    setMySets((prev) => [...prev, { ...setItem, source: "catalog" }])
+    setToastMessage("レシピ帳に保存しました")
+  }
+
+  function handlePurchaseRecipeFromCatalog(id: string) {
+    setPublicRecipes((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, statusBadges: markPurchasedBadges(item.statusBadges) } : item
+      )
+    )
+    setToastMessage("購入しました")
+    setPurchasePrompt({ type: "recipe", id })
+  }
+
+  function handlePurchaseSetFromCatalog(id: string) {
+    setPublicSets((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, statusBadges: markPurchasedBadges(item.statusBadges) } : item
+      )
+    )
+    setToastMessage("購入しました")
+    setPurchasePrompt({ type: "set", id })
+  }
+
+  const openPurchaseConfirm = (type: "recipe" | "set", id: string) => {
+    const source =
+      type === "recipe"
+        ? publicRecipes.find((item) => item.id === id)
+        : publicSets.find((item) => item.id === id)
+    if (!source) return
+    const access = getAccessInfo(source.statusBadges)
+    if (!access.hasPrice) {
+      if (access.hasMembership && !membershipAvailable) {
+        setToastMessage("メンバー限定は準備中です")
+      }
+      return
+    }
+    setPurchaseConfirm({ type, id, priceLabel: access.priceLabel })
+  }
+
+  const closePurchaseConfirm = () => setPurchaseConfirm(null)
+
+  const handleConfirmPurchaseIntent = () => {
+    if (!purchaseConfirm) return
+    if (purchaseConfirm.type === "recipe") {
+      handlePurchaseRecipeFromCatalog(purchaseConfirm.id)
+    } else {
+      handlePurchaseSetFromCatalog(purchaseConfirm.id)
+    }
+    setPurchaseConfirm(null)
+  }
+
+  const closePurchasePrompt = () => setPurchasePrompt(null)
+
+  const handlePurchasePromptSave = () => {
+    if (!purchasePrompt) return
+    if (purchasePrompt.type === "recipe") {
+      handleSaveRecipeFromCatalog(purchasePrompt.id)
+    } else {
+      handleSaveSetFromCatalog(purchasePrompt.id)
+    }
+    setPurchasePrompt(null)
+  }
+
+  function handleDeleteRecipe(id: string) {
+    if (!window.confirm("レシピ帳から削除しますか？")) return
+    setMyRecipes((prev) => prev.filter((item) => item.id !== id))
+    closeRecipe()
+    setToastMessage("削除しました")
+  }
+
+  function handleDeleteSet(id: string) {
+    if (!window.confirm("レシピ帳から削除しますか？")) return
+    setMySets((prev) => prev.filter((item) => item.id !== id))
+    closeSet()
+    setToastMessage("削除しました")
+  }
+
+  const openShare = (type: "recipe" | "set", id: string) => {
+    setShareTarget({ type, id })
+  }
+
+  const closeShare = () => setShareTarget(null)
+
+  const buildShareUrl = (type: "recipe" | "set", id: string) =>
+    `https://kondate-loop.example.com/share/${type}/${id}`
+
+  const handleShareSubmit = (payload: { author?: string; sourceUrl?: string }) => {
+    if (!shareTarget) return
+    const nextAuthor = payload.author?.trim()
+    const nextSourceUrl = payload.sourceUrl?.trim()
+    if (shareTarget.type === "recipe") {
+      setMyRecipes((prev) =>
+        prev.map((item) =>
+          item.id === shareTarget.id
+            ? {
+                ...item,
+                author: nextAuthor || item.author,
+                sourceUrl: nextSourceUrl || item.sourceUrl,
+              }
+            : item
+        )
+      )
+    } else {
+      setMySets((prev) =>
+        prev.map((item) =>
+          item.id === shareTarget.id
+            ? {
+                ...item,
+                author: nextAuthor || item.author,
+                sourceUrl: nextSourceUrl || item.sourceUrl,
+              }
+            : item
+        )
+      )
+    }
+    const url = buildShareUrl(shareTarget.type, shareTarget.id)
+    const title =
+      shareTarget.type === "recipe"
+        ? shareRecipe?.title ?? "レシピ"
+        : shareSet?.title ?? "レシピセット"
+    setShareTarget(null)
+    setShareLink({ url, title, type: shareTarget.type })
+  }
+
+  const openRecipe = (id: string, context: "kondate" | "book" | "catalog" | "set") => {
+    setRecipeContext(context)
+    setSelectedRecipeId(id)
+  }
+  function closeRecipe() {
+    setSelectedRecipeId(null)
+    setReturnToSetId(null)
+  }
+  const openSet = (id: string, context: "kondate" | "book" | "catalog") => {
+    setSetContext(context)
+    setSelectedSetId(id)
+    setSetDetailOpen(true)
+  }
+  const openSetCreate = (template?: SetTemplate) => {
+    setSetTemplate(template ?? null)
+    navigate("set-create")
+  }
+  const openChef = (author?: string) => {
+    const name = author?.trim() || "料理家"
+    setActiveChef({ name })
+    setSelectedRecipeId(null)
+    setSelectedSetId(null)
+    setSetDetailOpen(false)
+    setReturnToSetId(null)
+    navigate("chef")
+  }
+  function closeSet() {
+    setSelectedSetId(null)
+    setSetDetailOpen(false)
+  }
+  const backToSetDetail = () => {
+    if (!returnToSetId) return
+    setSelectedRecipeId(null)
+    setSelectedSetId(returnToSetId)
+    setSetDetailOpen(true)
+    setReturnToSetId(null)
+  }
+
+  const consumeIngredientsFromFridge = (recipe?: { ingredients?: Ingredient[] }) => {
+    if (!recipe?.ingredients?.length) return
+    setFridgeItems((prev) => {
+      let next = [...prev]
+      recipe.ingredients?.forEach((ing) => {
+        const index = next.findIndex(
+          (item) => item.name === ing.name && item.unit === ing.unit
+        )
+        if (index === -1) return
+        const target = next[index]
+        const remaining = target.amount - ing.amount
+        if (remaining <= 0) {
+          next = next.filter((_, idx) => idx !== index)
+        } else {
+          next[index] = { ...target, amount: remaining }
+        }
+      })
+      return next
+    })
+  }
+
+  const recipeLocked = recipeContext === "catalog" && !recipeAccess.accessible
+  const recipeLockedMessage =
+    recipeAccess.hasMembership && !membershipAvailable && !recipeAccess.hasPrice
+      ? "メンバー限定コンテンツは準備中です"
+      : recipeAccess.hasMembership && membershipAvailable
+        ? "加入するとレシピの中身が見られるよ"
+        : "購入するとレシピの中身が見られるよ"
+
+  const recipeLockedActions =
+    recipeContext === "catalog" ? (
+      <Stack gap="sm">
+        {recipeAccess.hasMembership && !membershipAvailable && !recipeAccess.hasPrice ? (
+          <Button className="w-full rounded-full" disabled>
+            メンバーシップ準備中
+          </Button>
+        ) : recipeAccess.hasMembership && membershipAvailable ? (
+          <Button className="w-full rounded-full" onClick={() => navigate("membership-plans")}>
+            プランを見る
+          </Button>
+        ) : null}
+        {recipeAccess.hasPrice ? (
+          <Button
+            className="w-full rounded-full"
+            onClick={() => selectedRecipeId && openPurchaseConfirm("recipe", selectedRecipeId)}
+          >
+            {recipeAccess.priceLabel ? `購入する ${recipeAccess.priceLabel}` : "購入する"}
+          </Button>
+        ) : null}
+        {recipeAccess.hasPrice ? (
+          <span className="text-center text-xs text-muted-foreground">
+            購入後に「保存」でレシピ帳へ
+          </span>
+        ) : null}
+      </Stack>
+    ) : null
+
+  const recipeShareButton =
+    canShareRecipeInBook && selectedRecipeId ? (
+      <Button
+        variant="secondary"
+        size="icon"
+        className="rounded-full"
+        onClick={() => openShare("recipe", selectedRecipeId)}
+        aria-label="外部共有"
+      >
+        <Share2 className="h-4 w-4" />
+      </Button>
+    ) : null
+  const setShareButton =
+    canShareSetInBook && selectedSetId ? (
+      <Button
+        variant="secondary"
+        size="icon"
+        className="rounded-full"
+        onClick={() => openShare("set", selectedSetId)}
+        aria-label="外部共有"
+      >
+        <Share2 className="h-4 w-4" />
+      </Button>
+    ) : null
+
+  const setLocked = setContext === "catalog" && !setAccess.accessible
+  const setLockedMessage =
+    setAccess.hasMembership && !membershipAvailable && !setAccess.hasPrice
+      ? "メンバー限定コンテンツは準備中です"
+      : setAccess.hasMembership && membershipAvailable
+        ? "加入すると献立表に登録できます"
+        : "購入すると献立表に登録できます"
+
+  const setLockedActions =
+    setContext === "catalog" ? (
+      <Stack gap="sm">
+        {setAccess.hasPrice ? (
+          <Button
+            className="w-full rounded-full"
+            onClick={() => selectedSetId && openPurchaseConfirm("set", selectedSetId)}
+          >
+            {setAccess.priceLabel ? `購入して使う ${setAccess.priceLabel}` : "購入して使う"}
+          </Button>
+        ) : null}
+        {setAccess.hasMembership && !membershipAvailable && !setAccess.hasPrice ? (
+          <Button variant="secondary" className="w-full rounded-full" disabled>
+            メンバーシップ準備中
+          </Button>
+        ) : setAccess.hasMembership && membershipAvailable ? (
+          <Button
+            variant="secondary"
+            className="w-full rounded-full"
+            onClick={() => navigate("membership-plans")}
+          >
+            プランを見る
+          </Button>
+        ) : null}
+        <span className="text-center text-xs text-muted-foreground">{setLockedMessage}</span>
+      </Stack>
+    ) : null
+
+  const recipeFooter =
+    recipeContext === "kondate" ? undefined : recipeContext === "catalog" ? (
+      <Stack gap="sm">
+        {recipeAccess.hasPrice ? (
+          <Button
+            className="w-full rounded-full"
+            disabled={!selectedRecipeId || recipeAccess.isPurchased}
+            onClick={() => selectedRecipeId && openPurchaseConfirm("recipe", selectedRecipeId)}
+          >
+            {recipeAccess.isPurchased
+              ? "購入済み"
+              : priceBadge
+                ? `購入する ${priceBadge}`
+                : "購入する"}
+          </Button>
+        ) : null}
+        <Button
+          variant="secondary"
+          className="w-full rounded-full"
+          disabled={!selectedRecipeId || savedRecipeIds.has(selectedRecipeId)}
+          onClick={() => selectedRecipeId && handleSaveRecipeFromCatalog(selectedRecipeId)}
+        >
+          {selectedRecipeId && savedRecipeIds.has(selectedRecipeId) ? "保存済み" : "レシピ帳に保存"}
+        </Button>
+        <Button
+          variant="secondary"
+          className="w-full rounded-full"
+          onClick={() => {
+            closeRecipe()
+            openSetCreate()
+          }}
+        >
+          ここからセットを作る
+        </Button>
+      </Stack>
+    ) : recipeContext === "set" ? (
+      <Stack gap="sm">
+        <Cluster gap="sm" wrap="nowrap" className="w-full">
+          {recipeShareButton}
+          <Button
+            variant="secondary"
+            className="w-full rounded-full"
+            onClick={() => {
+              closeRecipe()
+              openSetCreate()
+            }}
+          >
+            ここからセットを作る
+          </Button>
+        </Cluster>
+      </Stack>
+    ) : (
+      <Stack gap="sm">
+        <Cluster gap="sm" wrap="nowrap" className="w-full">
+          {recipeShareButton}
+          <Button
+            variant="secondary"
+            className="w-full rounded-full"
+            onClick={() => {
+              closeRecipe()
+              openSetCreate()
+            }}
+          >
+            ここからセットを作る
+          </Button>
+        </Cluster>
+        <Button
+          variant="ghost"
+          className="w-full rounded-full text-destructive"
+          onClick={() => selectedRecipeId && handleDeleteRecipe(selectedRecipeId)}
+        >
+          レシピ帳から削除
+        </Button>
+      </Stack>
+    )
+
+  const applySelectedSet = () => {
+    if (!selectedSet) return
+    setCurrentSet(selectedSet)
+    setShoppingItems(buildShoppingItems(selectedSet, fridgeItems))
+    closeSet()
+    navigate("kondate", true)
+  }
+
+  const isCatalogSetInBook = setContext === "book" && selectedSet?.source === "catalog"
+  const openSetCreateFromSet = () => {
+    if (!selectedSet) return
+    closeSet()
+    if (isCatalogSetInBook) {
+      openSetCreate({
+        title: `${selectedSet.title}のコピー`,
+        recipeIds: selectedSet.recipeIds ?? [],
+        imageUrl: selectedSet.imageUrl,
+      })
+      return
+    }
+    openSetCreate()
+  }
+
+  const setFooter = (
+    <Stack gap="sm">
+      <Button className="w-full rounded-full" onClick={applySelectedSet}>
+        献立表に登録する
+      </Button>
+      {setContext === "catalog" ? (
+        <Button
+          variant="secondary"
+          className="w-full rounded-full"
+          disabled={!selectedSetId || savedSetIds.has(selectedSetId)}
+          onClick={() => selectedSetId && handleSaveSetFromCatalog(selectedSetId)}
+        >
+          {selectedSetId && savedSetIds.has(selectedSetId) ? "保存済み" : "レシピ帳に保存"}
+        </Button>
+      ) : (
+        <>
+          <Cluster gap="sm" wrap="nowrap" className="w-full">
+            {setShareButton}
+            <Button
+              variant="secondary"
+              className="w-full rounded-full"
+              onClick={openSetCreateFromSet}
+            >
+              {isCatalogSetInBook ? "このセットから作る" : "編集する"}
+            </Button>
+          </Cluster>
+          {canShareSetInBook ? (
+            <Button
+              variant="ghost"
+              className="w-full rounded-full text-destructive"
+              onClick={() => selectedSetId && handleDeleteSet(selectedSetId)}
+            >
+              レシピ帳から削除
+            </Button>
+          ) : null}
+        </>
+      )}
+    </Stack>
+  )
+
+  const toggleCooked = () => {
+    if (!selectedRecipeId) return
+    const next = new Set(cookedIds)
+    const wasCooked = next.has(selectedRecipeId)
+    if (wasCooked) {
+      next.delete(selectedRecipeId)
+    } else {
+      consumeIngredientsFromFridge(selectedRecipe ?? undefined)
+      next.add(selectedRecipeId)
+    }
+    setCookedIds(next)
+    closeRecipe()
+    if (recipeContext === "kondate") {
+      setScreen("kondate")
+    }
+    if (!wasCooked && currentSet) {
+      const allCooked =
+        kondateRecipes.length > 0 && kondateRecipes.every((recipe) => next.has(recipe.id))
+      if (allCooked) {
+        window.setTimeout(() => setCompletionOpen(true), 500)
+      }
+    }
+  }
+
+  const handlePurchaseItem = (id: string) => {
+    setShoppingItems((prev) =>
+      prev.map((entry) =>
+        entry.id === id ? { ...entry, checked: !entry.checked } : entry
+      )
+    )
+  }
+
+  const handleConfirmPurchase = () => {
+    const purchased = shoppingItems.filter((entry) => entry.checked)
+    if (!purchased.length) return
+    const remainingExtras = shoppingItems.filter(
+      (entry) => entry.isExtra && !entry.checked
+    )
+    setFridgeItems((current) => {
+      const nextFridge = [
+        ...current,
+        ...purchased.map((entry) => ({
+          id: `f-${Date.now()}-${entry.id}`,
+          name: entry.name,
+          amount: entry.amount,
+          unit: entry.unit,
+        })),
+      ]
+      setShoppingItems([...buildShoppingItems(currentSet, nextFridge), ...remainingExtras])
+      return nextFridge
+    })
+    setShoppingOpen(false)
+    setToastMessage("冷蔵庫に追加しました")
+  }
+
+  const completeCurrentSet = React.useCallback(() => {
+    setCompletionOpen(false)
+    if (nextSet) {
+      setCurrentSet(nextSet)
+      setNextSet(null)
+      setShoppingItems(buildShoppingItems(nextSet, fridgeItems))
+    } else {
+      setCurrentSet(null)
+      setShoppingItems([])
+    }
+    setCookedIds(new Set())
+  }, [buildShoppingItems, fridgeItems, nextSet])
+
+  const handleAddFridgeItem = (name: string, amount: number, unit: string) => {
+    setFridgeItems((prev) => {
+      const next = [...prev, { id: `f-${Date.now()}`, name, amount, unit }]
+      const extras = shoppingItems.filter((entry) => entry.isExtra)
+      setShoppingItems([...buildShoppingItems(currentSet, next), ...extras])
+      return next
+    })
+  }
+
+  const handleAddExtraItem = (name: string, amount: number, unit: string) => {
+    const key = `extra-${Date.now()}`
+    setShoppingItems((prev) => [
+      ...prev,
+      {
+        id: key,
+        name,
+        amount,
+        unit,
+        key,
+        isExtra: true,
+        checked: false,
+      },
+    ])
+  }
+
+  const handleRemoveExtraItem = (id: string) => {
+    setShoppingItems((prev) => prev.filter((entry) => entry.id !== id))
+  }
+
+  const handleDeleteFridgeItem = (id: string) => {
+    setFridgeItems((prev) => {
+      const item = prev.find((entry) => entry.id === id)
+      if (!item) return prev
+      const next = prev.filter((entry) => entry.id !== id)
+      setDeletedFridgeItems((history) => [
+        { ...item, deletedAt: new Date().toISOString() },
+        ...history,
+      ])
+      setShoppingItems((current) => {
+        const extras = current.filter((entry) => entry.isExtra)
+        return [...buildShoppingItems(currentSet, next), ...extras]
+      })
+      return next
+    })
+  }
+
+  const handleCreateRecipe = (recipe: Recipe) => {
+    setMyRecipes((prev) => [...prev, recipe])
+    setToastMessage("レシピを追加しました")
+    navigate("book", true)
+  }
+
+  const handleCreateSet = (setItem: RecipeSet) => {
+    setMySets((prev) => [...prev, setItem])
+    setToastMessage("セットを追加しました")
+    setSetTemplate(null)
+    navigate("book", true)
+  }
+
+  const handleSelectSet = (setItem: AnySet) => {
+    const toast =
+      selectingFor === "next" ? "次の献立に登録しました" : "献立表に登録しました"
+    if (selectingFor === "next") {
+      setNextSet(setItem)
+    } else {
+      setCurrentSet(setItem)
+      setCookedIds(new Set())
+      setShoppingItems(buildShoppingItems(setItem, fridgeItems))
+    }
+    setToastMessage(toast)
+    navigate("kondate", true)
+  }
+
+  const renderScreen = () => {
+    switch (screen) {
+      case "auth":
+        return (
+          <AuthLandingScreen
+            onLogin={() => navigate("login")}
+            onSignup={() => navigate("signup")}
+          />
+        )
+      case "login":
+        return (
+          <LoginScreen
+            onBack={() => navigate("auth", true)}
+            onOpenSignup={() => navigate("signup")}
+            onSubmit={handleLogin}
+          />
+        )
+      case "signup":
+        return (
+          <SignupScreen
+            onBack={() => navigate("auth", true)}
+            onOpenLogin={() => navigate("login")}
+            onSubmit={handleSignup}
+          />
+        )
+      case "auth-error":
+        return (
+          <AuthErrorScreen
+            title={authError?.title}
+            message={authError?.message}
+            onBack={() => navigate("auth", true)}
+          />
+        )
+      case "kondate":
+        return (
+          <KondateScreen
+            currentSet={currentSet}
+            nextSet={nextSet}
+            recipes={kondateRecipes}
+            onOpenRecipe={(id) => openRecipe(id, "kondate")}
+            onSelectSet={() => {
+              setSelectingFor("current")
+              navigate("set-select")
+            }}
+            onChangeSet={() => {
+              setSelectingFor("current")
+              navigate("set-select")
+            }}
+            onResetCurrent={() => {
+              setCurrentSet(null)
+              setCookedIds(new Set())
+              setShoppingItems([])
+            }}
+            onSelectNext={() => {
+              setSelectingFor("next")
+              navigate("set-select")
+            }}
+            onResetNext={() => setNextSet(null)}
+            showShopping={shoppingItems.length > 0}
+            shoppingCount={shoppingItems.length}
+            onOpenShopping={() => setShoppingOpen(true)}
+            onOpenNotifications={() => navigate("notifications")}
+            onOpenFridge={() => setFridgeOpen(true)}
+            onOpenHelp={() => navigate("onboarding")}
+            onOpenHome={() => navigate("kondate", true)}
+            onOpenCurrentSet={() => {
+              if (currentSet) openSet(currentSet.id, "kondate")
+            }}
+            onOpenNextSet={() => {
+              if (nextSet) openSet(nextSet.id, "kondate")
+            }}
+          />
+        )
+      case "book":
+        return (
+          <RecipeBookScreen
+            categories={categories}
+            followedAuthors={mockFollowedAuthors}
+            onUpdateCategories={setCategories}
+            onCreateCategory={createCategory}
+            recipes={myRecipes}
+            sets={mySets}
+            onOpenRecipe={(id) => openRecipe(id, "book")}
+            onCreateSet={() => {
+              setSetTemplate(null)
+              navigate("set-create")
+            }}
+            onCreateRecipe={() => navigate("recipe-add")}
+            onOpenSet={(id) => openSet(id, "book")}
+            onOpenNotifications={() => navigate("notifications")}
+            onOpenFridge={() => setFridgeOpen(true)}
+            onOpenHelp={() => navigate("onboarding")}
+            onOpenHome={() => navigate("kondate", true)}
+            onOpenChef={openChef}
+          />
+        )
+      case "catalog":
+        return (
+          <RecipeCatalogScreen
+            categories={categories}
+            followedAuthors={mockFollowedAuthors}
+            recipes={publicRecipes}
+            sets={publicSets}
+            savedRecipeIds={savedRecipeIds}
+            savedSetIds={savedSetIds}
+            onSaveRecipe={handleSaveRecipeFromCatalog}
+            onPurchaseRecipe={(id) => openPurchaseConfirm("recipe", id)}
+            onSaveSet={handleSaveSetFromCatalog}
+            onPurchaseSet={(id) => openPurchaseConfirm("set", id)}
+            onUpdateCategories={setCategories}
+            onCreateCategory={createCategory}
+            onOpenChef={openChef}
+            membershipAvailable={membershipAvailable}
+            onOpenRecipe={(id) => openRecipe(id, "catalog")}
+            onOpenSet={(id) => openSet(id, "catalog")}
+            onOpenNotifications={() => navigate("notifications")}
+            onOpenFridge={() => setFridgeOpen(true)}
+            onOpenHelp={() => navigate("onboarding")}
+            onOpenHome={() => navigate("kondate", true)}
+          />
+        )
+      case "mypage":
+        return (
+          <MyPageScreen
+            onOpenNotifications={() => navigate("notifications")}
+            onOpenFridge={() => setFridgeOpen(true)}
+            onOpenHelp={() => navigate("onboarding")}
+            onOpenHome={() => navigate("kondate", true)}
+            onOpenPurchaseHistory={() => navigate("purchase")}
+            onOpenPaymentHistory={() => navigate("payment")}
+            onOpenCatalog={() => navigate("catalog")}
+            onToast={setToastMessage}
+            onOpenArchive={() => navigate("archive")}
+            onLogout={() => setLogoutConfirm(true)}
+          />
+        )
+      case "onboarding":
+        return (
+          <OnboardingScreen
+            onStart={() => {
+              setHasOnboarded(true)
+              navigate("kondate", true)
+            }}
+          />
+        )
+      case "set-select":
+        return (
+          <SetSelectScreen
+            sets={mySets}
+            publicSets={publicSets}
+            recipes={recipePool}
+            fridgeItems={fridgeItems}
+            selectingFor={selectingFor}
+            membershipAvailable={membershipAvailable}
+            onSelect={(setItem) => handleSelectSet(setItem)}
+            onSelectLocked={(message) => setToastMessage(message)}
+            onCreateSet={() => {
+              setSetTemplate(null)
+              navigate("set-create")
+            }}
+            onOpenRecipeBook={() => navigate("book")}
+            onOpenRecipeCatalog={() => navigate("catalog")}
+            onBack={goBack}
+          />
+        )
+      case "set-create":
+        return (
+          <SetCreateScreen
+            recipes={recipePool}
+            templates={mySets}
+            initialSet={setTemplate ?? undefined}
+            onBack={() => {
+              setSetTemplate(null)
+              goBack()
+            }}
+            onSave={handleCreateSet}
+          />
+        )
+      case "recipe-add":
+        return <RecipeAddScreen onBack={goBack} onSave={handleCreateRecipe} />
+      case "shopping":
+        return (
+          <ShoppingListScreen
+            items={shoppingItems}
+            onPurchase={handlePurchaseItem}
+            onConfirm={handleConfirmPurchase}
+            onAddExtra={handleAddExtraItem}
+            onRemoveExtra={handleRemoveExtraItem}
+            onBack={goBack}
+          />
+        )
+      case "fridge":
+        return (
+          <FridgeScreen
+            items={fridgeItems}
+            deletedItems={deletedFridgeItems}
+            onAddItem={handleAddFridgeItem}
+            onDeleteItem={handleDeleteFridgeItem}
+            onBack={goBack}
+          />
+        )
+      case "notifications":
+        return (
+          <NotificationsScreen
+            onBack={goBack}
+            onOpenHome={() => navigate("kondate", true)}
+            onOpenHelp={() => navigate("onboarding")}
+            onOpenNotifications={() => navigate("notifications")}
+            onOpenFridge={() => setFridgeOpen(true)}
+            onOpenNews={(item) => {
+              setActiveNews(item)
+              navigate("news-detail")
+            }}
+          />
+        )
+      case "news-detail":
+        return <NewsDetailScreen onBack={goBack} data={activeNews ?? undefined} />
+      case "chef":
+        return <ChefDetailScreen onBack={goBack} chefName={activeChef?.name} />
+      case "membership-plans":
+        return <MembershipPlansScreen onBack={goBack} />
+      case "membership-detail":
+        return <MembershipDetailScreen onBack={goBack} />
+      case "archive":
+        return <ArchiveScreen onBack={goBack} />
+      case "diagnosis":
+        return <DiagnosisScreen onBack={goBack} />
+      case "purchase":
+        return <PurchaseHistoryScreen onBack={goBack} />
+      case "payment":
+        return <PaymentHistoryScreen onBack={goBack} />
+      default:
+        return null
+    }
+  }
 
   return (
-    <div className="min-h-dvh bg-[radial-gradient(circle_at_20%_0%,_#fff2e4_0%,_transparent_60%)]">
-      <div className="mx-auto flex min-h-dvh w-full max-w-[375px] flex-col bg-background">
-        <header className="flex items-center justify-between px-4 pb-2 pt-5">
-          <div>
-            <p className="text-sm font-semibold tracking-wide text-foreground">
-              kondate loop
-            </p>
-            <p className="text-xs text-muted-foreground">献立表</p>
+    <div>
+      {renderScreen()}
+      {isAuthenticated && rootScreens.includes(screen) ? (
+        <BottomNav active={screen as NavItemKey} onChange={handleNav} />
+      ) : null}
+      <RecipeDetailModal
+        open={selectedRecipeId !== null}
+        onClose={closeRecipe}
+        data={recipeDetailData}
+        cooked={selectedRecipeId ? cookedIds.has(selectedRecipeId) : false}
+        onToggleCooked={toggleCooked}
+        footer={recipeLocked ? undefined : recipeFooter}
+        onBackToSet={returnToSetId ? backToSetDetail : undefined}
+        onOpenAuthor={
+          recipeContext === "catalog" || setContext === "catalog"
+            ? () => openChef(recipeDetailData.author)
+            : undefined
+        }
+        locked={recipeLocked}
+        lockedMessage={recipeLockedMessage}
+        lockedActions={recipeLockedActions ?? undefined}
+      />
+      <RecipeSetDetailModal
+        open={setDetailOpen && selectedSetId !== null}
+        onClose={closeSet}
+        data={setDetailData}
+        footer={setLocked ? undefined : setFooter}
+        locked={setLocked}
+        lockedMessage={setLockedMessage}
+        lockedActions={setLockedActions ?? undefined}
+        onOpenAuthor={setContext === "catalog" ? () => openChef(setDetailData.author) : undefined}
+        onOpenRecipe={(id) => {
+          if (selectedSetId) {
+            setReturnToSetId(selectedSetId)
+          }
+          setSetDetailOpen(false)
+          openRecipe(id, "set")
+        }}
+      />
+      <ShareModal
+        open={shareTarget !== null}
+        title={
+          shareTarget?.type === "recipe"
+            ? shareRecipe?.title ?? "レシピ"
+            : shareSet?.title ?? "レシピセット"
+        }
+        typeLabel={shareTarget?.type === "recipe" ? "レシピ" : "レシピセット"}
+        author={shareTarget?.type === "recipe" ? shareRecipe?.author : shareSet?.author}
+        sourceUrl={shareTarget?.type === "recipe" ? shareRecipe?.sourceUrl : shareSet?.sourceUrl}
+        onClose={closeShare}
+        onSubmit={handleShareSubmit}
+      />
+      <ShareLinkModal
+        open={shareLink !== null}
+        title={shareLinkTitle}
+        typeLabel={shareLinkTypeLabel}
+        link={shareLink?.url ?? ""}
+        onClose={() => setShareLink(null)}
+        onCopy={() => setToastMessage("リンクをコピーしました")}
+      />
+      <ShoppingModal
+        open={shoppingOpen}
+        onClose={() => setShoppingOpen(false)}
+        items={shoppingItems}
+        onToggle={handlePurchaseItem}
+        onConfirm={handleConfirmPurchase}
+        onAddExtra={handleAddExtraItem}
+        onRemoveExtra={handleRemoveExtraItem}
+        unitOptions={unitOptions}
+        onAddUnitOption={registerUnitOption}
+      />
+      <FridgeModal
+        open={fridgeOpen}
+        onClose={() => setFridgeOpen(false)}
+        items={fridgeItems}
+        deletedItems={deletedFridgeItems}
+        onAddItem={handleAddFridgeItem}
+        onDeleteItem={handleDeleteFridgeItem}
+        unitOptions={unitOptions}
+        onAddUnitOption={registerUnitOption}
+      />
+      {purchasePrompt ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200">
+          <div className="relative w-full max-w-sm overflow-hidden rounded-3xl bg-card p-6 text-center shadow-xl motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95 motion-safe:slide-in-from-bottom-4 motion-safe:duration-200">
+            <button
+              type="button"
+              aria-label="閉じる"
+              onClick={closePurchasePrompt}
+              className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background text-sm text-muted-foreground"
+            >
+              ×
+            </button>
+            <div className="text-3xl">🎉</div>
+            <div className="mt-3 text-base font-semibold">購入しました</div>
+            <div className="mt-2 text-xs text-muted-foreground">
+              {purchasePrompt.type === "recipe" ? "レシピ" : "セット"}
+            </div>
+            <div className="mt-1 text-sm font-semibold">
+              {purchasePrompt.type === "recipe"
+                ? publicRecipes.find((item) => item.id === purchasePrompt.id)?.title ?? "購入アイテム"
+                : publicSets.find((item) => item.id === purchasePrompt.id)?.title ?? "購入アイテム"}
+            </div>
+            <div className="mt-2 text-sm text-muted-foreground">
+              {purchasePrompt.type === "recipe"
+                ? "購入したレシピをレシピ帳に保存しましょう"
+                : "購入したレシピセットをレシピ帳に保存しましょう"}
+            </div>
+            <div className="mt-5 flex flex-col gap-2">
+              <Button className="w-full rounded-full" onClick={handlePurchasePromptSave}>
+                レシピ帳に保存
+              </Button>
+            </div>
           </div>
-          <div className="flex items-center gap-1">
-            <Button variant="ghost" size="sm" className="h-8 text-xs">
-              使い方
-            </Button>
-            <Button variant="ghost" size="icon" className="h-9 w-9">
-              <Bell className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-9 w-9">
-              <Refrigerator className="h-4 w-4" />
+        </div>
+      ) : null}
+      {purchaseConfirm ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200">
+          <div className="relative w-full max-w-sm overflow-hidden rounded-3xl bg-card p-6 text-center shadow-xl motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95 motion-safe:slide-in-from-bottom-4 motion-safe:duration-200">
+            <button
+              type="button"
+              aria-label="閉じる"
+              onClick={closePurchaseConfirm}
+              className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background text-sm text-muted-foreground"
+            >
+              ×
+            </button>
+            <div className="text-base font-semibold">購入しますか？</div>
+            <div className="mt-2 text-sm text-muted-foreground">
+              {purchaseConfirm.priceLabel
+                ? `${purchaseConfirm.priceLabel}の${purchaseConfirm.type === "recipe" ? "レシピ" : "レシピセット"}を購入します`
+                : "このアイテムを購入します"}
+            </div>
+            <div className="mt-5 flex flex-col gap-2">
+              <Button className="w-full rounded-full" onClick={handleConfirmPurchaseIntent}>
+                購入する
+              </Button>
+              <Button variant="ghost" className="w-full rounded-full" onClick={closePurchaseConfirm}>
+                キャンセル
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {logoutConfirm ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200">
+          <div className="relative w-full max-w-sm overflow-hidden rounded-3xl bg-card p-6 text-center shadow-xl motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95 motion-safe:slide-in-from-bottom-4 motion-safe:duration-200">
+            <div className="text-base font-semibold">ログアウトしますか？</div>
+            <div className="mt-2 text-sm text-muted-foreground">
+              ログアウトするとトップページに戻ります。
+            </div>
+            <div className="mt-5 flex flex-col gap-2">
+              <Button
+                className="w-full rounded-full"
+                onClick={() => {
+                  setLogoutConfirm(false)
+                  handleLogout()
+                }}
+              >
+                ログアウトする
+              </Button>
+              <Button
+                variant="ghost"
+                className="w-full rounded-full"
+                onClick={() => setLogoutConfirm(false)}
+              >
+                キャンセル
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {toastMessage ? (
+        <div className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2">
+          <div className="toast-pop rounded-full bg-foreground px-4 py-2 text-xs font-semibold text-background shadow-lg">
+            {toastMessage}
+          </div>
+        </div>
+      ) : null}
+      {completionOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200">
+          <div className="w-full max-w-sm overflow-hidden rounded-3xl bg-card p-6 text-center shadow-xl motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95 motion-safe:slide-in-from-bottom-4 motion-safe:duration-200">
+            <div className="text-3xl">🎉</div>
+            <div className="mt-3 text-base font-semibold">献立を完了しました！</div>
+            <div className="mt-2 text-sm text-muted-foreground">
+              おつかれさま！<br />
+              全ての料理を作りました。<br />
+              次の献立を選びましょう。
+            </div>
+            <Button className="mt-5 w-full rounded-full" onClick={completeCurrentSet}>
+              閉じる
             </Button>
           </div>
-        </header>
-
-        <main className="flex-1 space-y-4 px-4 pb-[calc(72px+env(safe-area-inset-bottom))]">
-          <h1 className="text-lg font-semibold">献立表</h1>
-
-          {activeTab !== "kondate" && (
-            <Card className="border-dashed bg-muted/50">
-              <CardContent className="p-6 text-sm text-muted-foreground">
-                この画面は準備中です。
-              </CardContent>
-            </Card>
-          )}
-
-          {activeTab === "kondate" && (
-            <>
-              <Card className="overflow-hidden">
-                <CardHeader className="space-y-1 p-4">
-                  <CardTitle className="text-base">現在のセット</CardTitle>
-                  <CardDescription>
-                    {currentSet?.description ?? "今日の手札"}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4 px-4 pb-0">
-                  {currentSet && (
-                    <div className="flex items-center justify-between">
-                      <Badge variant="secondary" className="text-xs">
-                        {currentSet.name}
-                      </Badge>
-                      <Button variant="ghost" size="sm" className="h-7 text-xs">
-                        リセット
-                      </Button>
-                    </div>
-                  )}
-
-                  {currentSet && (
-                    <ScrollArea className="w-full">
-                      <div className="flex gap-3 pb-3">
-                        {currentSet.cards.map((card) => (
-                          <div
-                            key={card.id}
-                            className={cn(
-                              "min-w-[148px] space-y-2 rounded-xl border bg-secondary/60 p-3",
-                              card.cooked &&
-                                "border-dashed text-muted-foreground"
-                            )}
-                          >
-                            <div
-                              className={cn(
-                                "aspect-[4/5] w-full rounded-lg border border-border bg-gradient-to-br from-[#f7e7da] to-[#f2d7c7]",
-                                card.cooked && "grayscale opacity-60"
-                              )}
-                            />
-                            <div className="space-y-1">
-                              {card.cooked && (
-                                <Badge
-                                  variant="outline"
-                                  className="text-[10px]"
-                                >
-                                  作った
-                                </Badge>
-                              )}
-                              <p className="text-sm font-semibold">
-                                {card.title}
-                              </p>
-                              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                                <span>{card.category}</span>
-                                <span>{card.time}</span>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      <ScrollBar orientation="horizontal" />
-                    </ScrollArea>
-                  )}
-
-                  {isEmpty && (
-                    <div className="rounded-xl border border-dashed bg-muted/50 p-4 text-center text-sm text-muted-foreground">
-                      献立がありません。セットを選択してください。
-                    </div>
-                  )}
-                </CardContent>
-                <CardFooter className="flex flex-wrap items-center gap-2 p-4 pt-4">
-                  <Button className="gap-2">
-                    <ShoppingBasket className="h-4 w-4" />
-                    買い物リスト
-                  </Button>
-                  <Badge variant="secondary" className="text-xs">
-                    {shoppingCount}品
-                  </Badge>
-                  <Button variant="outline">セットを変える</Button>
-                </CardFooter>
-              </Card>
-
-              <Card>
-                <CardHeader className="space-y-1 p-4">
-                  <CardTitle className="text-base">次の献立</CardTitle>
-                  <CardDescription>次に回すセット</CardDescription>
-                </CardHeader>
-                <CardContent className="p-4 pt-0">
-                  {nextSet && (
-                    <div className="space-y-3 rounded-xl border bg-secondary/60 p-3">
-                      <div className="aspect-[16/9] w-full rounded-lg border border-border bg-gradient-to-br from-[#f7e7da] to-[#f2d7c7]" />
-                      <div className="space-y-1">
-                        <p className="text-sm font-semibold">{nextSet.name}</p>
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>全{nextSet.total}品</span>
-                          <span>目安: 2〜3日</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </>
-          )}
-        </main>
-
-        <nav className="fixed bottom-0 left-1/2 z-10 w-full max-w-[375px] -translate-x-1/2 border-t border-border bg-background/90 backdrop-blur">
-          <div className="flex items-center justify-between px-6 py-4">
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn("h-10 w-10", activeTab === "kondate" && "text-primary")}
-              onClick={() => setActiveTab("kondate")}
-            >
-              <CalendarDays className="h-5 w-5" />
-              <span className="sr-only">献立表</span>
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn("h-10 w-10", activeTab === "book" && "text-primary")}
-              onClick={() => setActiveTab("book")}
-            >
-              <BookOpen className="h-5 w-5" />
-              <span className="sr-only">レシピ帳</span>
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn(
-                "h-10 w-10",
-                activeTab === "catalog" && "text-primary"
-              )}
-              onClick={() => setActiveTab("catalog")}
-            >
-              <Store className="h-5 w-5" />
-              <span className="sr-only">レシピカタログ</span>
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn("h-10 w-10", activeTab === "mypage" && "text-primary")}
-              onClick={() => setActiveTab("mypage")}
-            >
-              <UserRound className="h-5 w-5" />
-              <span className="sr-only">マイページ</span>
-            </Button>
-          </div>
-        </nav>
-      </div>
+        </div>
+      ) : null}
     </div>
   )
 }
-
-export default App
