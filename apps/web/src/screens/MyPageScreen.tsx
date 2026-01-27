@@ -8,7 +8,6 @@ import { Surface } from "@/components/primitives/Surface"
 import { Stack, Cluster } from "@/components/primitives/Stack"
 import { H2, H3, Body, Muted } from "@/components/primitives/Typography"
 import { SectionHeader } from "@/components/primitives/SectionHeader"
-import { EmptyState } from "@/components/domain/EmptyState"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 

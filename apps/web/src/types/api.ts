@@ -1,4 +1,4 @@
-export type StatusBadgeVariant = "free" | "purchased" | "price" | "membership" | "saved"
+export type StatusBadgeVariant = "free" | "purchased" | "price" | "membership" | "status"
 
 export type StatusBadge = {
   label: string
@@ -8,10 +8,10 @@ export type StatusBadge = {
 export type Recipe = {
   id: string
   title: string
-  author: string
+  author?: string
   imageUrl?: string
   sourceUrl?: string
-  tags: string[]
+  tags?: string[]
   cookTimeMinutes?: number
   savedCount?: number
   createdAt?: string
@@ -21,11 +21,11 @@ export type Recipe = {
 export type RecipeSet = {
   id: string
   title: string
-  author: string
+  author?: string
   count: number
   imageUrl?: string
   sourceUrl?: string
-  tags: string[]
+  tags?: string[]
   savedCount?: number
   createdAt?: string
   statusBadges?: StatusBadge[]

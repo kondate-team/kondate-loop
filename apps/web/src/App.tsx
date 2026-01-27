@@ -10,6 +10,7 @@ import { ShareModal } from "@/components/domain/ShareModal"
 import { ShareLinkModal } from "@/components/domain/ShareLinkModal"
 import { Button } from "@/components/ui/button"
 import { Stack, Cluster } from "@/components/primitives/Stack"
+import type { CategoryItem } from "@/components/domain/CategoryTabs"
 import {
   recipeCategories,
   mockRecipes,
@@ -21,6 +22,7 @@ import {
   recipeDetailMock,
   recipeSetDetailMock,
 } from "@/data/mockData"
+import type { Recipe as ApiRecipe, RecipeSet as ApiRecipeSet, StatusBadge } from "@/types/api"
 import { defaultUnitOptions } from "@/data/unitOptions"
 import { KondateScreen } from "@/screens/KondateScreen"
 import { RecipeBookScreen } from "@/screens/RecipeBookScreen"
@@ -76,10 +78,19 @@ export type ScreenKey =
 const rootScreens: ScreenKey[] = ["kondate", "book", "catalog", "mypage"]
 
 type Ingredient = { name: string; amount: number; unit: string }
-type Recipe = (typeof mockRecipes)[number] & { source?: "catalog" }
-type RecipeSet = (typeof mockSets)[number] & { source?: "catalog" }
-type PublicRecipe = (typeof mockPublicRecipes)[number]
-type PublicSet = (typeof mockPublicSets)[number]
+type ShoppingItem = {
+  id: string
+  name: string
+  amount: number
+  unit: string
+  key: string
+  isExtra: boolean
+  checked: boolean
+}
+type Recipe = ApiRecipe & { ingredients?: Ingredient[]; source?: "catalog" }
+type RecipeSet = ApiRecipeSet & { source?: "catalog" }
+type PublicRecipe = Recipe
+type PublicSet = RecipeSet
 type AnySet = RecipeSet | PublicSet
 type SetTemplate = {
   title?: string
@@ -121,7 +132,7 @@ const buildShoppingItemsFromSet = (
       const fridgeAmount = fridgeMap.get(key) ?? 0
       const remaining = value.amount - fridgeAmount
       return remaining > 0
-        ? {
+        ? ({
             id: `i-${key}`,
             name: value.name,
             amount: remaining,
@@ -129,10 +140,10 @@ const buildShoppingItemsFromSet = (
             key,
             isExtra: false,
             checked: false,
-          }
+          } as ShoppingItem)
         : null
     })
-    .filter(Boolean)
+    .filter((item): item is ShoppingItem => item !== null)
 }
 
 export default function App() {
@@ -142,7 +153,7 @@ export default function App() {
   const [, setHistory] = React.useState<ScreenKey[]>(["auth"])
   const [authError, setAuthError] = React.useState<{ title: string; message: string } | null>(null)
   const [logoutConfirm, setLogoutConfirm] = React.useState(false)
-  const [categories, setCategories] = React.useState(() => recipeCategories)
+  const [categories, setCategories] = React.useState<CategoryItem[]>(() => recipeCategories)
   const [myRecipes, setMyRecipes] = React.useState<Recipe[]>(() => mockRecipes)
   const [mySets, setMySets] = React.useState<RecipeSet[]>(() => mockSets)
   const [publicRecipes, setPublicRecipes] = React.useState<PublicRecipe[]>(() => mockPublicRecipes)
@@ -253,7 +264,7 @@ export default function App() {
       buildShoppingItemsFromSet(setItem, recipePool, fridgeList),
     [recipePool]
   )
-  const [shoppingItems, setShoppingItems] = React.useState(() =>
+  const [shoppingItems, setShoppingItems] = React.useState<ShoppingItem[]>(() =>
     buildShoppingItemsFromSet(mockSets[0] ?? null, mockRecipes, mockFridgeItems)
   )
 
@@ -388,9 +399,7 @@ export default function App() {
 
   const membershipAvailable = false
   const isMember = false
-  const getAccessInfo = (
-    badges?: { label: string; variant: "free" | "price" | "purchased" | "membership" | "status" }[]
-  ) => {
+  const getAccessInfo = (badges?: StatusBadge[]) => {
     const labels = badges?.map((badge) => badge.label) ?? []
     const hasPrice = labels.some((label) => label.includes("¥"))
     const hasMembership = labels.includes("限定")
@@ -431,9 +440,7 @@ export default function App() {
     shareTarget?.type === "set" ? mySets.find((item) => item.id === shareTarget.id) : null
   const shareLinkTitle = shareLink?.title ?? ""
   const shareLinkTypeLabel = shareLink?.type === "set" ? "レシピセット" : "レシピ"
-  const markPurchasedBadges = (
-    badges?: { label: string; variant: "free" | "price" | "purchased" | "membership" | "status" }[]
-  ) => {
+  const markPurchasedBadges = (badges?: StatusBadge[]) => {
     const filtered = (badges ?? []).filter(
       (badge) => !["フリー", "購入済み"].includes(badge.label) && !badge.label.includes("¥")
     )
@@ -841,7 +848,8 @@ export default function App() {
     navigate("kondate", true)
   }
 
-  const isCatalogSetInBook = setContext === "book" && selectedSet?.source === "catalog"
+  const isCatalogSetInBook =
+    setContext === "book" && selectedSet && "source" in selectedSet && selectedSet.source === "catalog"
   const openSetCreateFromSet = () => {
     if (!selectedSet) return
     closeSet()
@@ -1073,8 +1081,8 @@ export default function App() {
       case "kondate":
         return (
           <KondateScreen
-            currentSet={currentSet}
-            nextSet={nextSet}
+            currentSet={currentSet ?? undefined}
+            nextSet={nextSet ?? undefined}
             recipes={kondateRecipes}
             onOpenRecipe={(id) => openRecipe(id, "kondate")}
             onSelectSet={() => {
