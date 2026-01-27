@@ -3,16 +3,19 @@ export default {
   darkMode: ["class"],
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
   theme: {
-  	extend: {
-  		fontFamily: {
-  			sans: ["var(--font-sans)", "ui-sans-serif", "system-ui"],
-  		},
-  		borderRadius: {
-  			lg: 'var(--radius)',
-  			md: 'calc(var(--radius) - 2px)',
-  			sm: 'calc(var(--radius) - 4px)'
-  		},
-  		colors: {
+		extend: {
+			fontFamily: {
+				sans: ["var(--font-sans)", "ui-sans-serif", "system-ui"],
+			},
+			boxShadow: {
+				soft: "0 10px 24px hsl(var(--kondate-shadow))",
+			},
+			borderRadius: {
+				lg: 'var(--radius)',
+				md: 'calc(var(--radius) - 2px)',
+				sm: 'calc(var(--radius) - 4px)'
+			},
+			colors: {
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
   			card: {
@@ -44,13 +47,23 @@ export default {
   				foreground: 'hsl(var(--destructive-foreground))'
   			},
   			border: 'hsl(var(--border))',
-  			input: 'hsl(var(--input))',
-  			ring: 'hsl(var(--ring))',
-  			chart: {
-  				'1': 'hsl(var(--chart-1))',
-  				'2': 'hsl(var(--chart-2))',
-  				'3': 'hsl(var(--chart-3))',
-  				'4': 'hsl(var(--chart-4))',
+				input: 'hsl(var(--input))',
+				ring: 'hsl(var(--ring))',
+				kondate: {
+					bg: 'hsl(var(--kondate-bg))',
+					surface: 'hsl(var(--kondate-surface))',
+					subtle: 'hsl(var(--kondate-subtle))',
+					text: 'hsl(var(--kondate-text))',
+					textSub: 'hsl(var(--kondate-text-sub))',
+					accent: 'hsl(var(--kondate-accent))',
+					accentSoft: 'hsl(var(--kondate-accent-soft))',
+					border: 'hsl(var(--kondate-border))',
+				},
+				chart: {
+					'1': 'hsl(var(--chart-1))',
+					'2': 'hsl(var(--chart-2))',
+					'3': 'hsl(var(--chart-3))',
+					'4': 'hsl(var(--chart-4))',
   				'5': 'hsl(var(--chart-5))'
   			}
   		}

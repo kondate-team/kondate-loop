@@ -11,6 +11,17 @@ body {
 @layer base {
   :root {
     --font-sans: "Noto Sans JP";
+    /* Kondate Loop base tokens (design system) */
+    --kondate-bg: 30 71.4% 97.3%;
+    --kondate-surface: 0 0% 100%;
+    --kondate-subtle: 31.8 45.9% 92.7%;
+    --kondate-text: 26.5 29.8% 22.4%;
+    --kondate-text-sub: 33.3 24.1% 43.9%;
+    --kondate-accent: 18.4 75% 60.8%;
+    --kondate-accent-soft: 18 76.9% 94.9%;
+    --kondate-border: 33 30.3% 87.1%;
+    --kondate-shadow: 26.5 29.8% 22.4% / 0.12;
+
     --background: 30 71.4% 97.3%;
     --foreground: 26.5 29.8% 22.4%;
     --card: 0 0% 100%;
