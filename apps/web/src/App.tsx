@@ -232,6 +232,7 @@ export default function App() {
   >([])
   const [onboardingGuideActive, setOnboardingGuideActive] = React.useState(false)
   const [onboardingGuideStep, setOnboardingGuideStep] = React.useState(0)
+  const [onboardingHistorySeeded, setOnboardingHistorySeeded] = React.useState(false)
   const categoryThemePalette = React.useMemo(
     () =>
       recipeCategories
@@ -319,10 +320,10 @@ export default function App() {
   const completeLogin = (firstTime?: boolean) => {
     setIsAuthenticated(true)
     if (firstTime) {
-      setHasOnboarded(false)
       setOnboardingGuideActive(true)
       setOnboardingGuideStep(1)
-      navigate("onboarding", true)
+      setOnboardingHistorySeeded(true)
+      navigate("kondate", true)
       return
     }
     navigate(hasOnboarded ? "kondate" : "onboarding", true)
@@ -366,6 +367,19 @@ export default function App() {
       setPwaInstalled(true)
       setToastMessage("ホーム画面に追加しました")
     }
+  }
+
+  const closeOnboardingGuide = () => setOnboardingGuideActive(false)
+  const advanceOnboardingGuide = () => {
+    if (!activeOnboardingGuide) return
+    const nextStep = activeOnboardingGuide.step + 1
+    if (nextStep > onboardingGuides.length) {
+      setOnboardingGuideActive(false)
+      setOnboardingGuideStep(0)
+      setHasOnboarded(true)
+      return
+    }
+    setOnboardingGuideStep(nextStep)
   }
 
   React.useEffect(() => {
@@ -518,6 +532,34 @@ export default function App() {
         mySets.find((item) => item.id === shareView.id) ??
         recipeSetDetailMock
       : null
+  const onboardingGuides = React.useMemo(
+    () => [
+      {
+        step: 1,
+        title: "まずはカテゴリを登録してみましょう",
+        message: "レシピ帳のカテゴリ管理から、自分の棚を作れます。",
+      },
+      {
+        step: 2,
+        title: "レシピ一覧を作ってみましょう",
+        message: "お気に入りのレシピを保存して、献立のベースに。",
+      },
+      {
+        step: 3,
+        title: "献立を組んでみましょう",
+        message: "今週のこんだてにセットを反映すると買い物が楽になります。",
+      },
+      {
+        step: 4,
+        title: "ホーム画面に追加しましょう",
+        message: "PWAとして追加すると、すぐ開けて便利です。",
+      },
+    ],
+    []
+  )
+  const activeOnboardingGuide = onboardingGuides.find(
+    (guide) => guide.step === onboardingGuideStep
+  )
   const markPurchasedBadges = (badges?: StatusBadge[]) => {
     const filtered = (badges ?? []).filter(
       (badge) => !["フリー", "購入済み"].includes(badge.label) && !badge.label.includes("¥")
@@ -1390,6 +1432,7 @@ export default function App() {
             onOpenFridge={() => setFridgeOpen(true)}
             onboardingGuideActive={onboardingGuideActive}
             onboardingGuideStep={onboardingGuideStep}
+            onboardingHistorySeeded={onboardingHistorySeeded}
             onAdvanceOnboarding={(nextStep) => setOnboardingGuideStep(nextStep)}
             onCompleteOnboarding={() => setOnboardingGuideActive(false)}
             onOpenNews={(item) => {
@@ -1422,7 +1465,30 @@ export default function App() {
   return (
     <div>
       {renderScreen()}
-      {pwaPromptEvent && !pwaDismissed && !pwaInstalled && isAuthenticated ? (
+      {onboardingGuideActive && activeOnboardingGuide && isAuthenticated ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4 py-6">
+          <Stack
+            className="w-full max-w-sm overflow-hidden rounded-2xl border border-border bg-card px-5 py-5"
+            gap="sm"
+          >
+            <Muted className="text-xs">はじめてのこんだてLoop</Muted>
+            <H2 className="text-lg">
+              {activeOnboardingGuide.step}/{onboardingGuides.length}
+            </H2>
+            <H3 className="text-base">{activeOnboardingGuide.title}</H3>
+            <Body className="text-sm text-muted-foreground">{activeOnboardingGuide.message}</Body>
+            <Cluster gap="sm" justify="end">
+              <Button variant="ghost" size="sm" onClick={closeOnboardingGuide}>
+                後で見る
+              </Button>
+              <Button variant="secondary" size="sm" onClick={advanceOnboardingGuide}>
+                {activeOnboardingGuide.step >= onboardingGuides.length ? "完了" : "次へ"}
+              </Button>
+            </Cluster>
+          </Stack>
+        </div>
+      ) : null}
+      {!pwaDismissed && !pwaInstalled && isAuthenticated ? (
         <div className="fixed bottom-24 left-0 right-0 z-40 flex justify-center px-4">
           <div className="w-full max-w-[430px] rounded-2xl border border-border bg-card px-4 py-3 shadow-lg">
             <Stack gap="sm">
@@ -1438,9 +1504,19 @@ export default function App() {
                 >
                   あとで
                 </Button>
-                <Button variant="secondary" size="sm" onClick={handlePwaInstall}>
-                  追加する
-                </Button>
+                {pwaPromptEvent ? (
+                  <Button variant="secondary" size="sm" onClick={handlePwaInstall}>
+                    追加する
+                  </Button>
+                ) : (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setToastMessage("ブラウザの共有メニューから追加できます")}
+                  >
+                    追加方法
+                  </Button>
+                )}
               </Cluster>
             </Stack>
           </div>
