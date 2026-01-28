@@ -343,6 +343,13 @@ export default function App() {
   }, [toastMessage])
 
   React.useEffect(() => {
+    if (typeof window === "undefined") return
+    const isStandalone =
+      window.matchMedia?.("(display-mode: standalone)").matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone
+    if (isStandalone) {
+      setPwaInstalled(true)
+    }
     const handlePrompt = (event: Event) => {
       event.preventDefault()
       setPwaPromptEvent(event as BeforeInstallPromptEvent)
@@ -1320,7 +1327,7 @@ export default function App() {
   return (
     <div>
       {renderScreen()}
-      {pwaPromptEvent && !pwaDismissed && !pwaInstalled && isAuthenticated ? (
+      {!pwaDismissed && !pwaInstalled && isAuthenticated ? (
         <div className="fixed bottom-24 left-0 right-0 z-40 flex justify-center px-4">
           <div className="w-full max-w-[430px] rounded-2xl border border-border bg-card px-4 py-3 shadow-lg">
             <Stack gap="sm">
@@ -1336,9 +1343,19 @@ export default function App() {
                 >
                   あとで
                 </Button>
-                <Button variant="secondary" size="sm" onClick={handlePwaInstall}>
-                  追加する
-                </Button>
+                {pwaPromptEvent ? (
+                  <Button variant="secondary" size="sm" onClick={handlePwaInstall}>
+                    追加する
+                  </Button>
+                ) : (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setToastMessage("ブラウザの共有メニューから追加できます")}
+                  >
+                    追加方法
+                  </Button>
+                )}
               </Cluster>
             </Stack>
           </div>
