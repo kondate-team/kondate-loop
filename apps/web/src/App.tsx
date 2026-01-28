@@ -108,6 +108,14 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>
 }
 
+const getShareViewFromPath = () => {
+  if (typeof window === "undefined") return null
+  const match = window.location.pathname.match(/^\/share\/(recipe|set)\/([^/]+)$/)
+  if (!match) return null
+  const type = match[1] === "set" ? "set" : "recipe"
+  return { type, id: match[2] }
+}
+
 const buildShoppingItemsFromSet = (
   setItem: { recipeIds?: string[] } | null,
   recipesPool: { id: string; ingredients?: Ingredient[] }[],
@@ -157,7 +165,11 @@ const buildShoppingItemsFromSet = (
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = React.useState(false)
   const [hasOnboarded, setHasOnboarded] = React.useState(true)
-  const [screen, setScreen] = React.useState<ScreenKey>("auth")
+  const [screen, setScreen] = React.useState<ScreenKey>(() => {
+    const shareView = getShareViewFromPath()
+    if (!shareView) return "auth"
+    return shareView.type === "recipe" ? "share-recipe" : "share-set"
+  })
   const [, setHistory] = React.useState<ScreenKey[]>(["auth"])
   const [authError, setAuthError] = React.useState<{ title: string; message: string } | null>(null)
   const [logoutConfirm, setLogoutConfirm] = React.useState(false)
@@ -205,7 +217,7 @@ export default function App() {
   const [shareView, setShareView] = React.useState<{
     type: "recipe" | "set"
     id: string
-  } | null>(null)
+  } | null>(() => getShareViewFromPath())
   const [completionOpen, setCompletionOpen] = React.useState(false)
   const [pwaPromptEvent, setPwaPromptEvent] = React.useState<BeforeInstallPromptEvent | null>(null)
   const [pwaDismissed, setPwaDismissed] = React.useState(false)
