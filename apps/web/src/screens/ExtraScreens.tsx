@@ -2012,24 +2012,127 @@ export function MembershipDetailScreen({ onBack }: SubScreenProps) {
 }
 
 export function ArchiveScreen({ onBack }: SubScreenProps) {
+  const [activeArchive, setActiveArchive] = React.useState<{
+    date: string
+    title: string
+    recipes: string[]
+  } | null>(null)
+  const year = 2026
+  const monthIndex = 0
+  const monthLabel = `${year}年${monthIndex + 1}月`
+  const firstDay = new Date(year, monthIndex, 1).getDay()
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate()
+  const archiveEntries = [
+    {
+      date: "2026-01-03",
+      title: "冬のほっこりセット",
+      recipes: ["甘辛チキン", "鮭ときのこのバター醤油", "味噌汁"],
+    },
+    {
+      date: "2026-01-08",
+      title: "時短3日セット",
+      recipes: ["豆腐とひき肉の旨辛丼", "サラダチキン", "きんぴら"],
+    },
+    {
+      date: "2026-01-15",
+      title: "作り置き活用セット",
+      recipes: ["肉じゃが", "ほうれん草おひたし", "鮭の塩焼き"],
+    },
+  ]
+  const entryMap = new Map(
+    archiveEntries.map((entry) => [entry.date, entry])
+  )
+  const calendarCells = Array.from({ length: firstDay + daysInMonth }, (_, index) => {
+    if (index < firstDay) return null
+    const day = index - firstDay + 1
+    const dateKey = `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+    return {
+      day,
+      dateKey,
+      entry: entryMap.get(dateKey) ?? null,
+    }
+  })
+
   return (
     <ScreenContainer>
       <HeaderBar variant="sub" title="アーカイブ" onBack={onBack} />
       <main className="px-5 pb-6 pt-4">
-        <Stack gap="sm">
-          {Array.from({ length: 5 }).map((_, idx) => (
-            <Surface key={idx} tone="card" density="compact">
+        <Stack gap="md">
+          <Surface tone="card" density="comfy" className="rounded-2xl">
+            <Stack gap="sm">
               <Cluster justify="between" align="center">
                 <Cluster gap="sm">
                   <Calendar className="h-4 w-4" />
-                  <Body className="text-sm">2026/01/0{idx + 1} の献立</Body>
+                  <H3 className="text-base">{monthLabel}</H3>
                 </Cluster>
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                <Muted className="text-xs">料理ログ</Muted>
               </Cluster>
-            </Surface>
-          ))}
+              <div className="grid grid-cols-7 gap-1 text-center text-[11px] text-muted-foreground">
+                {["日", "月", "火", "水", "木", "金", "土"].map((label) => (
+                  <div key={label}>{label}</div>
+                ))}
+              </div>
+              <div className="grid grid-cols-7 gap-1">
+                {calendarCells.map((cell, idx) =>
+                  cell ? (
+                    <button
+                      key={cell.dateKey}
+                      type="button"
+                      onClick={() => cell.entry && setActiveArchive(cell.entry)}
+                      className={cn(
+                        "flex h-10 flex-col items-center justify-center rounded-lg text-xs",
+                        cell.entry
+                          ? "bg-amber-50 text-amber-900"
+                          : "bg-muted/30 text-muted-foreground"
+                      )}
+                      disabled={!cell.entry}
+                    >
+                      <span>{cell.day}</span>
+                      {cell.entry ? <span className="mt-0.5 h-1 w-1 rounded-full bg-amber-400" /> : null}
+                    </button>
+                  ) : (
+                    <div key={`empty-${idx}`} className="h-10" />
+                  )
+                )}
+              </div>
+              <Muted className="text-xs">料理した日をタップすると詳細が見られます。</Muted>
+            </Stack>
+          </Surface>
         </Stack>
       </main>
+      {activeArchive ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4 py-6">
+          <Surface
+            tone="card"
+            density="none"
+            elevation="raised"
+            className="w-full max-w-sm overflow-hidden"
+          >
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <H2 className="text-lg">{activeArchive.title}</H2>
+              <button
+                type="button"
+                onClick={() => setActiveArchive(null)}
+                className="rounded-full border border-border px-3 py-1 text-xs"
+              >
+                閉じる
+              </button>
+            </div>
+            <div className="px-5 py-5">
+              <Stack gap="sm">
+                <Muted className="text-xs">{activeArchive.date}</Muted>
+                <Stack gap="xs">
+                  {activeArchive.recipes.map((recipe) => (
+                    <div key={recipe} className="rounded-lg border border-border/60 px-3 py-2 text-sm">
+                      {recipe}
+                    </div>
+                  ))}
+                </Stack>
+              </Stack>
+            </div>
+          </Surface>
+        </div>
+      ) : null}
     </ScreenContainer>
   )
 }
