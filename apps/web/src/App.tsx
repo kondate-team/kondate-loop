@@ -210,6 +210,8 @@ export default function App() {
   const [deletedFridgeItems, setDeletedFridgeItems] = React.useState<
     { id: string; name: string; amount: number; unit: string; deletedAt: string }[]
   >([])
+  const [onboardingGuideActive, setOnboardingGuideActive] = React.useState(false)
+  const [onboardingGuideStep, setOnboardingGuideStep] = React.useState(0)
   const categoryThemePalette = React.useMemo(
     () =>
       recipeCategories
@@ -298,6 +300,8 @@ export default function App() {
     setIsAuthenticated(true)
     if (firstTime) {
       setHasOnboarded(false)
+      setOnboardingGuideActive(true)
+      setOnboardingGuideStep(1)
       navigate("onboarding", true)
       return
     }
@@ -1314,6 +1318,10 @@ export default function App() {
             onOpenHelp={() => navigate("onboarding")}
             onOpenNotifications={() => navigate("notifications")}
             onOpenFridge={() => setFridgeOpen(true)}
+            onboardingGuideActive={onboardingGuideActive}
+            onboardingGuideStep={onboardingGuideStep}
+            onAdvanceOnboarding={(nextStep) => setOnboardingGuideStep(nextStep)}
+            onCompleteOnboarding={() => setOnboardingGuideActive(false)}
             onOpenNews={(item) => {
               setActiveNews(item)
               navigate("news-detail")
