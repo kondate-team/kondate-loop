@@ -389,6 +389,13 @@ export default function App() {
   }, [toastMessage])
 
   React.useEffect(() => {
+    if (typeof window === "undefined") return
+    const isStandalone =
+      window.matchMedia?.("(display-mode: standalone)").matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone
+    if (isStandalone) {
+      setPwaInstalled(true)
+    }
     const handlePrompt = (event: Event) => {
       event.preventDefault()
       setPwaPromptEvent(event as BeforeInstallPromptEvent)
