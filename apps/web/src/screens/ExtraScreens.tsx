@@ -1492,6 +1492,7 @@ export function NotificationsScreen({
   onOpenNews,
   onboardingGuideActive,
   onboardingGuideStep,
+  onboardingHistorySeeded,
   onAdvanceOnboarding,
   onCompleteOnboarding,
 }: SubScreenProps & {
@@ -1502,6 +1503,7 @@ export function NotificationsScreen({
   onOpenNews?: (item: { title: string; message: string; sourceName?: string; createdAt: string }) => void
   onboardingGuideActive?: boolean
   onboardingGuideStep?: number
+  onboardingHistorySeeded?: boolean
   onAdvanceOnboarding?: (nextStep: number) => void
   onCompleteOnboarding?: () => void
 }) {
@@ -1578,7 +1580,7 @@ export function NotificationsScreen({
   )
 
   React.useEffect(() => {
-    if (!onboardingGuideActive) return
+    if (!onboardingHistorySeeded && !onboardingGuideActive) return
     setItems((prev) => {
       const hasOnboarding = prev.some((item) => item.id.startsWith("onboard-"))
       if (hasOnboarding) return prev
