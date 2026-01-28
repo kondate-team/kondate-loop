@@ -972,13 +972,6 @@ export function RecipeAddScreen({
   const [tagsText, setTagsText] = React.useState("")
   const [coverImageUrl, setCoverImageUrl] = React.useState("")
   const [importText, setImportText] = React.useState("")
-  const [importPreview, setImportPreview] = React.useState<{
-    title: string
-    ingredientsText: string
-    stepsText: string
-    author?: string
-    sourceUrl?: string
-  } | null>(null)
   const [importError, setImportError] = React.useState<string | null>(null)
 
   const parseIngredients = (value: string) => {
@@ -1036,21 +1029,16 @@ export function RecipeAddScreen({
       return
     }
     setImportError(null)
-    setImportPreview(buildImportPreview(importText))
-  }
-
-  const applyImportPreview = () => {
-    if (!importPreview) return
-    setTitle(importPreview.title)
-    setIngredientsText(importPreview.ingredientsText)
-    setStepsText(importPreview.stepsText)
-    if (importPreview.sourceUrl) {
-      setSourceUrl(importPreview.sourceUrl)
+    const preview = buildImportPreview(importText)
+    setTitle(preview.title)
+    setIngredientsText(preview.ingredientsText)
+    setStepsText(preview.stepsText)
+    if (preview.sourceUrl) {
+      setSourceUrl(preview.sourceUrl)
     }
-    if (importPreview.author) {
-      setAuthor(importPreview.author)
+    if (preview.author) {
+      setAuthor(preview.author)
     }
-    setImportPreview(null)
   }
 
   const handleSaveRecipe = () => {
@@ -1105,20 +1093,6 @@ export function RecipeAddScreen({
               >
                 反映する
               </Button>
-              {importPreview ? (
-                <Surface tone="card" density="compact" className="rounded-xl">
-                  <Stack gap="xs">
-                    <Muted className="text-xs">取り込みプレビュー</Muted>
-                    <H3 className="text-sm">{importPreview.title}</H3>
-                    <Muted className="text-xs">
-                      {importPreview.ingredientsText.split("\n").slice(0, 2).join(" / ")}
-                    </Muted>
-                    <Button variant="ghost" size="sm" onClick={applyImportPreview}>
-                      この内容を反映
-                    </Button>
-                  </Stack>
-                </Surface>
-              ) : null}
             </Stack>
           </Surface>
 
