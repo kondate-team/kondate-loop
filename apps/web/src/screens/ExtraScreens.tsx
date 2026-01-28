@@ -971,6 +971,15 @@ export function RecipeAddScreen({
   const [sourceUrl, setSourceUrl] = React.useState("")
   const [tagsText, setTagsText] = React.useState("")
   const [coverImageUrl, setCoverImageUrl] = React.useState("")
+  const [importText, setImportText] = React.useState("")
+  const [importPreview, setImportPreview] = React.useState<{
+    title: string
+    ingredientsText: string
+    stepsText: string
+    author?: string
+    sourceUrl?: string
+  } | null>(null)
+  const [importError, setImportError] = React.useState<string | null>(null)
 
   const parseIngredients = (value: string) => {
     return value
@@ -989,6 +998,59 @@ export function RecipeAddScreen({
         }
         return { name: line, amount: 1, unit: "個" }
       })
+  }
+
+  const buildImportPreview = (value: string) => {
+    const lines = value
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+    const urlLine = lines.find((line) => line.startsWith("http"))
+    const cleanedLines = lines.filter((line) => line !== urlLine)
+    const titleLine = cleanedLines[0] ?? "取り込みレシピ"
+    const ingredientsIndex = cleanedLines.findIndex((line) => line.includes("材料"))
+    const stepsIndex = cleanedLines.findIndex(
+      (line) => line.includes("作り方") || line.includes("手順")
+    )
+    const ingredientsLines =
+      ingredientsIndex >= 0
+        ? cleanedLines.slice(
+            ingredientsIndex + 1,
+            stepsIndex > ingredientsIndex ? stepsIndex : undefined
+          )
+        : cleanedLines.slice(1, stepsIndex > 1 ? stepsIndex : undefined)
+    const stepsLines =
+      stepsIndex >= 0 ? cleanedLines.slice(stepsIndex + 1) : cleanedLines.slice(2)
+
+    return {
+      title: titleLine,
+      ingredientsText: ingredientsLines.join("\n") || "材料 2人前",
+      stepsText: stepsLines.join("\n") || "作り方をここに入力してください",
+      sourceUrl: urlLine,
+    }
+  }
+
+  const handleImport = () => {
+    if (!importText.trim()) {
+      setImportError("取り込みたいURLまたはテキストを入力してください。")
+      return
+    }
+    setImportError(null)
+    setImportPreview(buildImportPreview(importText))
+  }
+
+  const applyImportPreview = () => {
+    if (!importPreview) return
+    setTitle(importPreview.title)
+    setIngredientsText(importPreview.ingredientsText)
+    setStepsText(importPreview.stepsText)
+    if (importPreview.sourceUrl) {
+      setSourceUrl(importPreview.sourceUrl)
+    }
+    if (importPreview.author) {
+      setAuthor(importPreview.author)
+    }
+    setImportPreview(null)
   }
 
   const handleSaveRecipe = () => {
@@ -1025,14 +1087,38 @@ export function RecipeAddScreen({
           <Surface tone="section" density="comfy" className="border-transparent">
             <Stack gap="sm">
               <H3 className="text-base">URLまたはテキストから取り込み</H3>
-                <textarea
-                  className="w-full rounded-2xl border border-border bg-card px-4 py-3 text-sm"
-                  rows={4}
-                  placeholder="レシピのURLやテキストを貼り付け"
-                />
-              <Button variant="secondary" size="sm" className="rounded-full">
+              <textarea
+                className="w-full rounded-2xl border border-border bg-card px-4 py-3 text-sm"
+                rows={4}
+                placeholder="レシピのURLやテキストを貼り付け"
+                value={importText}
+                onChange={(event) => setImportText(event.target.value)}
+              />
+              {importError ? (
+                <Muted className="text-xs text-destructive">{importError}</Muted>
+              ) : null}
+              <Button
+                variant="secondary"
+                size="sm"
+                className="rounded-full"
+                onClick={handleImport}
+              >
                 反映する
               </Button>
+              {importPreview ? (
+                <Surface tone="card" density="compact" className="rounded-xl">
+                  <Stack gap="xs">
+                    <Muted className="text-xs">取り込みプレビュー</Muted>
+                    <H3 className="text-sm">{importPreview.title}</H3>
+                    <Muted className="text-xs">
+                      {importPreview.ingredientsText.split("\n").slice(0, 2).join(" / ")}
+                    </Muted>
+                    <Button variant="ghost" size="sm" onClick={applyImportPreview}>
+                      この内容を反映
+                    </Button>
+                  </Stack>
+                </Surface>
+              ) : null}
             </Stack>
           </Surface>
 
