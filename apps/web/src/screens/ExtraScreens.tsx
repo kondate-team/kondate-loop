@@ -130,14 +130,14 @@ export function LoginScreen({
         <Surface tone="card" density="comfy" className="mt-6 rounded-3xl bg-card/90">
           <Stack gap="sm">
             <input
-              className="w-full rounded-full border border-border bg-card px-4 py-2 text-sm"
+              className="w-full rounded-full border border-border bg-card px-4 py-2 text-base"
               placeholder="メールアドレス"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               inputMode="email"
             />
             <input
-              className="w-full rounded-full border border-border bg-card px-4 py-2 text-sm"
+              className="w-full rounded-full border border-border bg-card px-4 py-2 text-base"
               placeholder="パスワード"
               type="password"
               value={password}
@@ -197,20 +197,20 @@ export function SignupScreen({
         <Surface tone="card" density="comfy" className="mt-6 rounded-3xl bg-card/90">
           <Stack gap="sm">
             <input
-              className="w-full rounded-full border border-border bg-card px-4 py-2 text-sm"
+              className="w-full rounded-full border border-border bg-card px-4 py-2 text-base"
               placeholder="表示名"
               value={name}
               onChange={(event) => setName(event.target.value)}
             />
             <input
-              className="w-full rounded-full border border-border bg-card px-4 py-2 text-sm"
+              className="w-full rounded-full border border-border bg-card px-4 py-2 text-base"
               placeholder="メールアドレス"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               inputMode="email"
             />
             <input
-              className="w-full rounded-full border border-border bg-card px-4 py-2 text-sm"
+              className="w-full rounded-full border border-border bg-card px-4 py-2 text-base"
               placeholder="パスワード"
               type="password"
               value={password}
