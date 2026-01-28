@@ -1490,15 +1490,33 @@ export function NotificationsScreen({
   onOpenNotifications,
   onOpenFridge,
   onOpenNews,
+  onboardingGuideActive,
+  onboardingGuideStep,
+  onAdvanceOnboarding,
+  onCompleteOnboarding,
 }: SubScreenProps & {
   onOpenHome?: () => void
   onOpenHelp?: () => void
   onOpenNotifications?: () => void
   onOpenFridge?: () => void
   onOpenNews?: (item: { title: string; message: string; sourceName?: string; createdAt: string }) => void
+  onboardingGuideActive?: boolean
+  onboardingGuideStep?: number
+  onAdvanceOnboarding?: (nextStep: number) => void
+  onCompleteOnboarding?: () => void
 }) {
+  type NotificationItem = {
+    id: string
+    category: "news" | "personal"
+    title: string
+    message: string
+    sourceName?: string
+    createdAt: string
+    readAt: string | null
+    onboardingStep?: number
+  }
   const [tab, setTab] = React.useState<"news" | "personal">("news")
-  const [items, setItems] = React.useState(() => [
+  const [items, setItems] = React.useState<NotificationItem[]>(() => [
     {
       id: "n1",
       category: "news",
@@ -1531,6 +1549,53 @@ export function NotificationsScreen({
     title: string
     message: string
   } | null>(null)
+  const [activeGuideStep, setActiveGuideStep] = React.useState<number | null>(null)
+
+  const onboardingGuides = React.useMemo(
+    () => [
+      {
+        step: 1,
+        title: "まずはカテゴリを登録してみましょう",
+        message: "レシピ帳のカテゴリ管理から、自分の棚を作れます。",
+      },
+      {
+        step: 2,
+        title: "レシピ一覧を作ってみましょう",
+        message: "お気に入りのレシピを保存して、献立のベースに。",
+      },
+      {
+        step: 3,
+        title: "献立を組んでみましょう",
+        message: "今週のこんだてにセットを反映すると買い物が楽になります。",
+      },
+      {
+        step: 4,
+        title: "ホーム画面に追加しましょう",
+        message: "PWAとして追加すると、すぐ開けて便利です。",
+      },
+    ],
+    []
+  )
+
+  React.useEffect(() => {
+    if (!onboardingGuideActive) return
+    setItems((prev) => {
+      const hasOnboarding = prev.some((item) => item.id.startsWith("onboard-"))
+      if (hasOnboarding) return prev
+      const now = new Date().toISOString()
+      const onboardingItems = onboardingGuides.map((guide) => ({
+        id: `onboard-${guide.step}`,
+        category: "personal",
+        title: guide.title,
+        message: guide.message,
+        sourceName: "",
+        createdAt: now,
+        readAt: null as string | null,
+        onboardingStep: guide.step,
+      }))
+      return [...onboardingItems, ...prev]
+    })
+  }, [onboardingGuideActive, onboardingGuides])
 
   const filteredItems = items
     .filter((item) => item.category === tab)
@@ -1552,6 +1617,10 @@ export function NotificationsScreen({
           : entry
       )
     )
+    if ("onboardingStep" in item && item.onboardingStep) {
+      setActiveGuideStep(item.onboardingStep)
+      return
+    }
     if (item.category === "news") {
       onOpenNews?.({
         title: item.title,
@@ -1568,6 +1637,19 @@ export function NotificationsScreen({
     const date = new Date(value)
     if (Number.isNaN(date.getTime())) return ""
     return `${date.getMonth() + 1}/${date.getDate()}`
+  }
+
+  const activeGuide = onboardingGuides.find((guide) => guide.step === activeGuideStep)
+  const handleGuideAdvance = () => {
+    if (!activeGuideStep) return
+    const nextStep = activeGuideStep + 1
+    setActiveGuideStep(null)
+    if (nextStep > onboardingGuides.length) {
+      onCompleteOnboarding?.()
+      onAdvanceOnboarding?.(0)
+      return
+    }
+    onAdvanceOnboarding?.(nextStep)
   }
 
   return (
@@ -1648,33 +1730,46 @@ export function NotificationsScreen({
             />
           ) : (
             <Stack gap="sm">
-              {filteredItems.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => openNotification(item)}
-                  className={cn(
-                    "w-full rounded-2xl border border-border bg-card px-4 py-3 text-left",
-                    item.readAt ? "opacity-80" : "shadow-[0_0_0_1px_rgba(0,0,0,0.04)]"
-                  )}
-                >
-                  <Stack gap="xs">
-                    <Cluster justify="between" align="center">
-                      <Body className="text-sm font-semibold">{item.title}</Body>
-                      {!item.readAt ? (
-                        <span className="h-2 w-2 rounded-full bg-primary" />
+              {filteredItems.map((item) => {
+                const isNextGuide =
+                  onboardingGuideActive &&
+                  typeof item.onboardingStep === "number" &&
+                  item.onboardingStep === onboardingGuideStep
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => openNotification(item)}
+                    className={cn(
+                      "w-full rounded-2xl border border-border bg-card px-4 py-3 text-left",
+                      item.readAt ? "opacity-80" : "shadow-[0_0_0_1px_rgba(0,0,0,0.04)]"
+                    )}
+                  >
+                    <Stack gap="xs">
+                      <Cluster justify="between" align="center">
+                        <Cluster gap="xs" align="center">
+                          <Body className="text-sm font-semibold">{item.title}</Body>
+                          {isNextGuide ? (
+                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-900">
+                              次のガイド
+                            </span>
+                          ) : null}
+                        </Cluster>
+                        {!item.readAt ? (
+                          <span className="h-2 w-2 rounded-full bg-primary" />
+                        ) : null}
+                      </Cluster>
+                      {item.category === "news" ? (
+                        <Muted className="text-xs">
+                          {item.sourceName || "献立ループ事務局"}
+                        </Muted>
                       ) : null}
-                    </Cluster>
-                    {item.category === "news" ? (
-                      <Muted className="text-xs">
-                        {item.sourceName || "献立ループ事務局"}
-                      </Muted>
-                    ) : null}
-                    <Muted className="text-xs">{item.message}</Muted>
-                    <Muted className="text-xs">{formatSimpleDate(item.createdAt)}</Muted>
-                  </Stack>
-                </button>
-              ))}
+                      <Muted className="text-xs">{item.message}</Muted>
+                      <Muted className="text-xs">{formatSimpleDate(item.createdAt)}</Muted>
+                    </Stack>
+                  </button>
+                )
+              })}
             </Stack>
           )}
         </Stack>
@@ -1703,6 +1798,41 @@ export function NotificationsScreen({
                 <Body className="text-sm text-muted-foreground">
                   {activeNotification.message}
                 </Body>
+              </Stack>
+            </div>
+          </Surface>
+        </div>
+      ) : null}
+      {activeGuide ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4 py-6">
+          <Surface
+            tone="card"
+            density="none"
+            elevation="raised"
+            className="w-full max-w-sm overflow-hidden"
+          >
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <H2 className="text-lg">ガイド {activeGuide.step}/4</H2>
+              <button
+                type="button"
+                onClick={() => setActiveGuideStep(null)}
+                className="rounded-full border border-border px-3 py-1 text-xs"
+              >
+                閉じる
+              </button>
+            </div>
+            <div className="px-5 py-5">
+              <Stack gap="sm">
+                <H3 className="text-base">{activeGuide.title}</H3>
+                <Body className="text-sm text-muted-foreground">{activeGuide.message}</Body>
+                <Cluster gap="sm" justify="end">
+                  <Button variant="ghost" size="sm" onClick={() => setActiveGuideStep(null)}>
+                    後で見る
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={handleGuideAdvance}>
+                    {activeGuide.step >= onboardingGuides.length ? "完了" : "次へ"}
+                  </Button>
+                </Cluster>
               </Stack>
             </div>
           </Surface>
