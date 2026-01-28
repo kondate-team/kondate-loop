@@ -467,6 +467,15 @@ export default function App() {
     setToastMessage("レシピ帳に保存しました")
   }
 
+  function handleUnsaveRecipeFromCatalog(id: string) {
+    if (!savedRecipeIds.has(id)) {
+      setToastMessage("まだ保存されていません")
+      return
+    }
+    setMyRecipes((prev) => prev.filter((item) => item.id !== id))
+    setToastMessage("保存を解除しました")
+  }
+
   function handleSaveSetFromCatalog(id: string) {
     if (savedSetIds.has(id)) {
       setToastMessage("保存済みです")
@@ -485,6 +494,15 @@ export default function App() {
     }
     setMySets((prev) => [...prev, { ...setItem, source: "catalog" }])
     setToastMessage("レシピ帳に保存しました")
+  }
+
+  function handleUnsaveSetFromCatalog(id: string) {
+    if (!savedSetIds.has(id)) {
+      setToastMessage("まだ保存されていません")
+      return
+    }
+    setMySets((prev) => prev.filter((item) => item.id !== id))
+    setToastMessage("保存を解除しました")
   }
 
   function handlePurchaseRecipeFromCatalog(id: string) {
@@ -1151,8 +1169,10 @@ export default function App() {
             savedRecipeIds={savedRecipeIds}
             savedSetIds={savedSetIds}
             onSaveRecipe={handleSaveRecipeFromCatalog}
+            onUnsaveRecipe={handleUnsaveRecipeFromCatalog}
             onPurchaseRecipe={(id) => openPurchaseConfirm("recipe", id)}
             onSaveSet={handleSaveSetFromCatalog}
+            onUnsaveSet={handleUnsaveSetFromCatalog}
             onPurchaseSet={(id) => openPurchaseConfirm("set", id)}
             onUpdateCategories={setCategories}
             onCreateCategory={createCategory}

@@ -47,8 +47,10 @@ interface RecipeCatalogScreenProps {
   savedRecipeIds: Set<string>
   savedSetIds: Set<string>
   onSaveRecipe: (id: string) => void
+  onUnsaveRecipe?: (id: string) => void
   onPurchaseRecipe: (id: string) => void
   onSaveSet: (id: string) => void
+  onUnsaveSet?: (id: string) => void
   onPurchaseSet: (id: string) => void
   onUpdateCategories?: (next: CategoryItem[]) => void
   onCreateCategory?: (label: string) => CategoryItem
@@ -78,8 +80,10 @@ export function RecipeCatalogScreen({
   savedRecipeIds,
   savedSetIds,
   onSaveRecipe,
+  onUnsaveRecipe,
   onPurchaseRecipe,
   onSaveSet,
+  onUnsaveSet,
   onPurchaseSet,
   onUpdateCategories,
   onCreateCategory,
@@ -142,7 +146,8 @@ export function RecipeCatalogScreen({
     statusBadges?: { label: string; variant: string }[],
     saved = false,
     onSave?: () => void,
-    onPurchase?: () => void
+    onPurchase?: () => void,
+    onUnsave?: () => void
   ) => {
     const access = getAccessInfo(
       statusBadges as { label: string; variant: "free" | "price" | "purchased" | "membership" | "status" }[]
@@ -156,19 +161,20 @@ export function RecipeCatalogScreen({
         {showSave ? (
           <button
             type="button"
-            disabled={saved}
             className={cn(
               "flex-1 rounded-full border px-2 py-0.5 text-[10px] whitespace-nowrap",
-              saved
-                ? "border-border/60 bg-muted/30 text-muted-foreground"
-                : "border-border bg-background text-muted-foreground"
+              saved ? "border-amber-200 bg-amber-50 text-amber-900" : "border-border bg-background text-muted-foreground"
             )}
             onClick={(event) => {
               event.stopPropagation()
-              onSave?.()
+              if (saved) {
+                onUnsave?.()
+              } else {
+                onSave?.()
+              }
             }}
           >
-            {saved ? "保存済" : "保存"}
+            {saved ? "保存解除" : "保存"}
           </button>
         ) : null}
         {showPurchase ? (
@@ -492,12 +498,13 @@ export function RecipeCatalogScreen({
                             statusBadges={recipe.statusBadges}
                             imageUrl={recipe.imageUrl}
                             variant="selectable"
-                            footerAction={renderCatalogActions(
-                              recipe.statusBadges,
-                              savedRecipeIds.has(recipe.id),
-                              () => onSaveRecipe(recipe.id),
-                              () => onPurchaseRecipe(recipe.id)
-                            )}
+                              footerAction={renderCatalogActions(
+                                recipe.statusBadges,
+                                savedRecipeIds.has(recipe.id),
+                                () => onSaveRecipe(recipe.id),
+                                () => onPurchaseRecipe(recipe.id),
+                                () => onUnsaveRecipe?.(recipe.id)
+                              )}
                             onAuthorClick={() => onOpenChef?.(recipe.author)}
                             onClick={() => onOpenRecipe(recipe.id)}
                           />
@@ -522,12 +529,13 @@ export function RecipeCatalogScreen({
                             statusBadges={set.statusBadges}
                             imageUrl={set.imageUrl}
                             size="selectable"
-                            footerAction={renderCatalogActions(
-                              set.statusBadges,
-                              savedSetIds.has(set.id),
-                              () => onSaveSet(set.id),
-                              () => onPurchaseSet(set.id)
-                            )}
+                              footerAction={renderCatalogActions(
+                                set.statusBadges,
+                                savedSetIds.has(set.id),
+                                () => onSaveSet(set.id),
+                                () => onPurchaseSet(set.id),
+                                () => onUnsaveSet?.(set.id)
+                              )}
                             onAuthorClick={() => onOpenChef?.(set.author)}
                             onClick={() => onOpenSet?.(set.id)}
                           />
