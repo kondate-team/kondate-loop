@@ -2121,13 +2121,23 @@ export function ArchiveScreen({ onBack }: SubScreenProps) {
             <div className="px-5 py-5">
               <Stack gap="sm">
                 <Muted className="text-xs">{activeArchive.date}</Muted>
-                <Stack gap="xs">
-                  {activeArchive.recipes.map((recipe) => (
-                    <div key={recipe} className="rounded-lg border border-border/60 px-3 py-2 text-sm">
-                      {recipe}
+                <Muted className="text-xs text-muted-foreground">スワイプで次へ</Muted>
+                <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">
+                  {activeArchive.recipes.map((recipe, idx) => (
+                    <div
+                      key={recipe}
+                      className="min-w-[220px] snap-center rounded-xl border border-border/60 bg-card px-4 py-4"
+                    >
+                      <div className="text-xs text-muted-foreground">
+                        {idx + 1}/{activeArchive.recipes.length}
+                      </div>
+                      <H3 className="mt-1 text-base">{recipe}</H3>
+                      <Muted className="mt-2 text-xs">
+                        料理ログの詳細は次の画面で確認できます。
+                      </Muted>
                     </div>
                   ))}
-                </Stack>
+                </div>
               </Stack>
             </div>
           </Surface>
