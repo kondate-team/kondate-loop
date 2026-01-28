@@ -100,6 +100,11 @@ type SetTemplate = {
   imageUrl?: string
 }
 
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>
+}
+
 const buildShoppingItemsFromSet = (
   setItem: { recipeIds?: string[] } | null,
   recipesPool: { id: string; ingredients?: Ingredient[] }[],
@@ -195,6 +200,9 @@ export default function App() {
     type: "recipe" | "set"
   } | null>(null)
   const [completionOpen, setCompletionOpen] = React.useState(false)
+  const [pwaPromptEvent, setPwaPromptEvent] = React.useState<BeforeInstallPromptEvent | null>(null)
+  const [pwaDismissed, setPwaDismissed] = React.useState(false)
+  const [pwaInstalled, setPwaInstalled] = React.useState(false)
   const [currentSet, setCurrentSet] = React.useState<AnySet | null>(() => mockSets[0] ?? null)
   const [nextSet, setNextSet] = React.useState<AnySet | null>(() => mockSets[1] ?? null)
   const [selectingFor, setSelectingFor] = React.useState<"current" | "next">("current")
@@ -317,11 +325,39 @@ export default function App() {
     navigate("auth", true)
   }
 
+  const handlePwaInstall = async () => {
+    if (!pwaPromptEvent) return
+    await pwaPromptEvent.prompt()
+    const choice = await pwaPromptEvent.userChoice
+    setPwaDismissed(true)
+    if (choice.outcome === "accepted") {
+      setPwaInstalled(true)
+      setToastMessage("ホーム画面に追加しました")
+    }
+  }
+
   React.useEffect(() => {
     if (!toastMessage) return
     const timer = window.setTimeout(() => setToastMessage(null), 2200)
     return () => window.clearTimeout(timer)
   }, [toastMessage])
+
+  React.useEffect(() => {
+    const handlePrompt = (event: Event) => {
+      event.preventDefault()
+      setPwaPromptEvent(event as BeforeInstallPromptEvent)
+    }
+    const handleInstalled = () => {
+      setPwaInstalled(true)
+      setPwaPromptEvent(null)
+    }
+    window.addEventListener("beforeinstallprompt", handlePrompt)
+    window.addEventListener("appinstalled", handleInstalled)
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handlePrompt)
+      window.removeEventListener("appinstalled", handleInstalled)
+    }
+  }, [])
 
   const goBack = React.useCallback(() => {
     setHistory((prev) => {
@@ -1284,6 +1320,30 @@ export default function App() {
   return (
     <div>
       {renderScreen()}
+      {pwaPromptEvent && !pwaDismissed && !pwaInstalled && isAuthenticated ? (
+        <div className="fixed bottom-24 left-0 right-0 z-40 flex justify-center px-4">
+          <div className="w-full max-w-[430px] rounded-2xl border border-border bg-card px-4 py-3 shadow-lg">
+            <Stack gap="sm">
+              <div className="text-sm font-semibold">ホーム画面に追加できます</div>
+              <div className="text-xs text-muted-foreground">
+                アプリのように素早く開けるようになります。
+              </div>
+              <Cluster gap="sm" justify="end">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setPwaDismissed(true)}
+                >
+                  あとで
+                </Button>
+                <Button variant="secondary" size="sm" onClick={handlePwaInstall}>
+                  追加する
+                </Button>
+              </Cluster>
+            </Stack>
+          </div>
+        </div>
+      ) : null}
       {isAuthenticated && rootScreens.includes(screen) ? (
         <BottomNav active={screen as NavItemKey} onChange={handleNav} />
       ) : null}
