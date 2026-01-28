@@ -529,10 +529,13 @@ export default function App() {
     if (!purchaseConfirm) return
     if (purchaseConfirm.type === "recipe") {
       handlePurchaseRecipeFromCatalog(purchaseConfirm.id)
+      closeRecipe()
     } else {
       handlePurchaseSetFromCatalog(purchaseConfirm.id)
+      closeSet()
     }
     setPurchaseConfirm(null)
+    navigate("catalog", true)
   }
 
   const closePurchasePrompt = () => setPurchasePrompt(null)
@@ -545,6 +548,7 @@ export default function App() {
       handleSaveSetFromCatalog(purchasePrompt.id)
     }
     setPurchasePrompt(null)
+    navigate("catalog", true)
   }
 
   function handleDeleteRecipe(id: string) {
