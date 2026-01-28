@@ -76,6 +76,19 @@ git switch -c feature/<issue番号>-<短い説明>
 
 - `feature/*` のPRを `dev` に複数取り込んだ後、まとめて `dev` → `main` をPRする
 
+## リポジトリ移管とローカル更新（最新）
+
+作業場所が確定したため、参照先URLとremote更新手順を最新化する。以後このURLのみを正とする。
+
+- 新しい作業場所: https://github.com/kondate-team/kondate-loop
+- 移管後はローカルのremoteを更新する
+
+```bash
+git remote set-url origin git@github.com:kondate-team/kondate-loop.git
+```
+
+共同作業者にも、リポジトリ移管とremote更新を必ず共有する。
+
 ## 開発（フロント）
 
 ```bash
