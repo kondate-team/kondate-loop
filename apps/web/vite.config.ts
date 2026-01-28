@@ -7,6 +7,7 @@ const isGithubPages = process.env.GITHUB_PAGES === 'true'
 
 export default defineConfig({
   base: isGithubPages ? '/kondate/' : '/',
+  appType: 'spa',
   plugins: [react()],
   resolve: {
     alias: {
