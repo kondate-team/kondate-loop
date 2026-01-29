@@ -115,7 +115,6 @@ const getShareViewFromPath = () => {
   const type = match[1] === "set" ? "set" : "recipe"
   return { type, id: match[2] }
 }
-
 const buildShoppingItemsFromSet = (
   setItem: { recipeIds?: string[] } | null,
   recipesPool: { id: string; ingredients?: Ingredient[] }[],
@@ -222,6 +221,8 @@ export default function App() {
   const [pwaPromptEvent, setPwaPromptEvent] = React.useState<BeforeInstallPromptEvent | null>(null)
   const [pwaDismissed, setPwaDismissed] = React.useState(false)
   const [pwaInstalled, setPwaInstalled] = React.useState(false)
+  const [pwaGuideOpen, setPwaGuideOpen] = React.useState(false)
+  const [pwaGuideHidden, setPwaGuideHidden] = React.useState(false)
   const [currentSet, setCurrentSet] = React.useState<AnySet | null>(() => mockSets[0] ?? null)
   const [nextSet, setNextSet] = React.useState<AnySet | null>(() => mockSets[1] ?? null)
   const [selectingFor, setSelectingFor] = React.useState<"current" | "next">("current")
@@ -381,12 +382,24 @@ export default function App() {
     }
     setOnboardingGuideStep(nextStep)
   }
+  const openPwaGuide = () => {
+    setPwaGuideOpen(true)
+  }
 
   React.useEffect(() => {
     if (!toastMessage) return
     const timer = window.setTimeout(() => setToastMessage(null), 2200)
     return () => window.clearTimeout(timer)
   }, [toastMessage])
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return
+    const hidden = window.localStorage.getItem("kondate-pwa-guide-hidden")
+    if (hidden === "true") {
+      setPwaGuideHidden(true)
+      setPwaDismissed(true)
+    }
+  }, [])
 
   React.useEffect(() => {
     if (typeof window === "undefined") return
@@ -1446,6 +1459,8 @@ export default function App() {
             onboardingHistorySeeded={onboardingHistorySeeded}
             onAdvanceOnboarding={(nextStep) => setOnboardingGuideStep(nextStep)}
             onCompleteOnboarding={() => setOnboardingGuideActive(false)}
+            pwaGuideAvailable={isAuthenticated}
+            onOpenPwaGuide={openPwaGuide}
             onOpenNews={(item) => {
               setActiveNews(item)
               navigate("news-detail")
@@ -1508,11 +1523,7 @@ export default function App() {
                 アプリのように素早く開けるようになります。
               </div>
               <Cluster gap="sm" justify="end">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setPwaDismissed(true)}
-                >
+                <Button variant="ghost" size="sm" onClick={() => setPwaDismissed(true)}>
                   あとで
                 </Button>
                 {pwaPromptEvent ? (
@@ -1520,11 +1531,7 @@ export default function App() {
                     追加する
                   </Button>
                 ) : (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setToastMessage("ブラウザの共有メニューから追加できます")}
-                  >
+                  <Button variant="secondary" size="sm" onClick={openPwaGuide}>
                     追加方法
                   </Button>
                 )}
@@ -1722,6 +1729,54 @@ export default function App() {
             <Button className="mt-5 w-full rounded-full" onClick={completeCurrentSet}>
               閉じる
             </Button>
+          </div>
+        </div>
+      ) : null}
+      {pwaGuideOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6">
+          <div className="w-full max-w-sm overflow-hidden rounded-3xl bg-card px-5 py-5 text-left shadow-xl">
+            <div className="text-center">
+              <H2 className="text-lg">ホーム画面に追加しよう</H2>
+              <Muted className="mt-1 text-xs">
+                追加するとすぐに開けて便利になります
+              </Muted>
+            </div>
+            <div className="mt-4 space-y-3 text-sm">
+              <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-3">
+                <div className="text-xs font-semibold text-muted-foreground">STEP 1</div>
+                <div className="mt-1">URL欄の共有ボタンをタップ</div>
+              </div>
+              <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-3">
+                <div className="text-xs font-semibold text-muted-foreground">STEP 2</div>
+                <div className="mt-1">「ホーム画面に追加」をタップ</div>
+              </div>
+              <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-3">
+                <div className="text-xs font-semibold text-muted-foreground">STEP 3</div>
+                <div className="mt-1">ホーム画面のアイコンから起動</div>
+              </div>
+            </div>
+            <div className="mt-4 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !pwaGuideHidden
+                  setPwaGuideHidden(next)
+                  window.localStorage.setItem("kondate-pwa-guide-hidden", String(next))
+                  if (next) setPwaDismissed(true)
+                }}
+                className="flex items-center gap-2 text-xs text-muted-foreground"
+              >
+                <span
+                  className={`h-4 w-4 rounded border ${
+                    pwaGuideHidden ? "bg-primary border-primary" : "border-border"
+                  }`}
+                />
+                今後表示しない
+              </button>
+              <Button variant="secondary" size="sm" onClick={() => setPwaGuideOpen(false)}>
+                閉じる
+              </Button>
+            </div>
           </div>
         </div>
       ) : null}

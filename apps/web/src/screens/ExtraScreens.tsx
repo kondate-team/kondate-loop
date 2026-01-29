@@ -1555,6 +1555,8 @@ export function NotificationsScreen({
   onboardingHistorySeeded,
   onAdvanceOnboarding,
   onCompleteOnboarding,
+  pwaGuideAvailable,
+  onOpenPwaGuide,
 }: SubScreenProps & {
   onOpenHome?: () => void
   onOpenHelp?: () => void
@@ -1566,6 +1568,8 @@ export function NotificationsScreen({
   onboardingHistorySeeded?: boolean
   onAdvanceOnboarding?: (nextStep: number) => void
   onCompleteOnboarding?: () => void
+  pwaGuideAvailable?: boolean
+  onOpenPwaGuide?: () => void
 }) {
   type NotificationItem = {
     id: string
@@ -1575,6 +1579,7 @@ export function NotificationsScreen({
     sourceName?: string
     createdAt: string
     readAt: string | null
+    kind?: "pwa-guide"
     onboardingStep?: number
   }
   const [tab, setTab] = React.useState<"news" | "personal">("news")
@@ -1659,6 +1664,24 @@ export function NotificationsScreen({
     })
   }, [onboardingGuideActive, onboardingGuides])
 
+  React.useEffect(() => {
+    if (!pwaGuideAvailable) return
+    setItems((prev) => {
+      if (prev.some((item) => item.id === "pwa-guide")) return prev
+      const now = new Date().toISOString()
+      const guideItem: NotificationItem = {
+        id: "pwa-guide",
+        category: "personal",
+        title: "ホーム画面に追加する方法",
+        message: "追加手順を確認して、すぐに開けるようにしましょう。",
+        createdAt: now,
+        readAt: null,
+        kind: "pwa-guide",
+      }
+      return [guideItem, ...prev]
+    })
+  }, [pwaGuideAvailable])
+
   const filteredItems = items
     .filter((item) => item.category === tab)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
@@ -1679,8 +1702,12 @@ export function NotificationsScreen({
           : entry
       )
     )
-    if ("onboardingStep" in item && item.onboardingStep) {
+    if (item.onboardingStep) {
       setActiveGuideStep(item.onboardingStep)
+      return
+    }
+    if (item.kind === "pwa-guide") {
+      onOpenPwaGuide?.()
       return
     }
     if (item.category === "news") {
