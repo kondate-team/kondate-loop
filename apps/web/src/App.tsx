@@ -28,6 +28,7 @@ import { KondateScreen } from "@/screens/KondateScreen"
 import { RecipeBookScreen } from "@/screens/RecipeBookScreen"
 import { RecipeCatalogScreen } from "@/screens/RecipeCatalogScreen"
 import { MyPageScreen } from "@/screens/MyPageScreen"
+import { ShareRecipeScreen, ShareSetScreen } from "@/screens/ShareScreens"
 import {
   OnboardingScreen,
   AuthLandingScreen,
@@ -59,6 +60,8 @@ export type ScreenKey =
   | "book"
   | "catalog"
   | "mypage"
+  | "share-recipe"
+  | "share-set"
   | "onboarding"
   | "set-select"
   | "set-create"
@@ -103,6 +106,13 @@ type SetTemplate = {
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>
+}
+const getShareViewFromPath = (): { type: "recipe" | "set"; id: string } | null => {
+  if (typeof window === "undefined") return null
+  const match = window.location.pathname.match(/^\/share\/(recipe|set)\/([^/]+)$/)
+  if (!match) return null
+  const type = match[1] === "set" ? "set" : "recipe"
+  return { type, id: match[2] }
 }
 
 const buildShoppingItemsFromSet = (
@@ -154,7 +164,11 @@ const buildShoppingItemsFromSet = (
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = React.useState(false)
   const [hasOnboarded, setHasOnboarded] = React.useState(true)
-  const [screen, setScreen] = React.useState<ScreenKey>("auth")
+  const [screen, setScreen] = React.useState<ScreenKey>(() => {
+    const shareView = getShareViewFromPath()
+    if (!shareView) return "auth"
+    return shareView.type === "recipe" ? "share-recipe" : "share-set"
+  })
   const [, setHistory] = React.useState<ScreenKey[]>(["auth"])
   const [authError, setAuthError] = React.useState<{ title: string; message: string } | null>(null)
   const [logoutConfirm, setLogoutConfirm] = React.useState(false)
@@ -199,6 +213,10 @@ export default function App() {
     title: string
     type: "recipe" | "set"
   } | null>(null)
+  const [shareView, setShareView] = React.useState<{
+    type: "recipe" | "set"
+    id: string
+  } | null>(() => getShareViewFromPath())
   const [completionOpen, setCompletionOpen] = React.useState(false)
   const [pwaPromptEvent, setPwaPromptEvent] = React.useState<BeforeInstallPromptEvent | null>(null)
   const [pwaDismissed, setPwaDismissed] = React.useState(false)
@@ -285,6 +303,15 @@ export default function App() {
     setHistory((prev) => [...prev, next])
     setScreen(next)
   }, [])
+
+  React.useEffect(() => {
+    const match = window.location.pathname.match(/^\/share\/(recipe|set)\/([^/]+)$/)
+    if (!match) return
+    const type = match[1] === "set" ? "set" : "recipe"
+    const id = match[2]
+    setShareView({ type, id })
+    navigate(type === "recipe" ? "share-recipe" : "share-set", true)
+  }, [navigate])
 
   const completeLogin = (firstTime?: boolean) => {
     setIsAuthenticated(true)
@@ -483,6 +510,16 @@ export default function App() {
     shareTarget?.type === "set" ? mySets.find((item) => item.id === shareTarget.id) : null
   const shareLinkTitle = shareLink?.title ?? ""
   const shareLinkTypeLabel = shareLink?.type === "set" ? "レシピセット" : "レシピ"
+  const shareRecipeView =
+    shareView?.type === "recipe"
+      ? recipePool.find((item) => item.id === shareView.id) ?? recipeDetailMock
+      : null
+  const shareSetView =
+    shareView?.type === "set"
+      ? publicSets.find((item) => item.id === shareView.id) ??
+        mySets.find((item) => item.id === shareView.id) ??
+        recipeSetDetailMock
+      : null
   const markPurchasedBadges = (badges?: StatusBadge[]) => {
     const filtered = (badges ?? []).filter(
       (badge) => !["フリー", "購入済み"].includes(badge.label) && !badge.label.includes("¥")
@@ -510,6 +547,15 @@ export default function App() {
     setToastMessage("レシピ帳に保存しました")
   }
 
+  function handleUnsaveRecipeFromCatalog(id: string) {
+    if (!savedRecipeIds.has(id)) {
+      setToastMessage("まだ保存されていません")
+      return
+    }
+    setMyRecipes((prev) => prev.filter((item) => item.id !== id))
+    setToastMessage("保存を解除しました")
+  }
+
   function handleSaveSetFromCatalog(id: string) {
     if (savedSetIds.has(id)) {
       setToastMessage("保存済みです")
@@ -528,6 +574,15 @@ export default function App() {
     }
     setMySets((prev) => [...prev, { ...setItem, source: "catalog" }])
     setToastMessage("レシピ帳に保存しました")
+  }
+
+  function handleUnsaveSetFromCatalog(id: string) {
+    if (!savedSetIds.has(id)) {
+      setToastMessage("まだ保存されていません")
+      return
+    }
+    setMySets((prev) => prev.filter((item) => item.id !== id))
+    setToastMessage("保存を解除しました")
   }
 
   function handlePurchaseRecipeFromCatalog(id: string) {
@@ -572,10 +627,13 @@ export default function App() {
     if (!purchaseConfirm) return
     if (purchaseConfirm.type === "recipe") {
       handlePurchaseRecipeFromCatalog(purchaseConfirm.id)
+      closeRecipe()
     } else {
       handlePurchaseSetFromCatalog(purchaseConfirm.id)
+      closeSet()
     }
     setPurchaseConfirm(null)
+    navigate("catalog", true)
   }
 
   const closePurchasePrompt = () => setPurchasePrompt(null)
@@ -588,6 +646,7 @@ export default function App() {
       handleSaveSetFromCatalog(purchasePrompt.id)
     }
     setPurchasePrompt(null)
+    navigate("catalog", true)
   }
 
   function handleDeleteRecipe(id: string) {
@@ -810,6 +869,26 @@ export default function App() {
   const recipeFooter =
     recipeContext === "kondate" ? undefined : recipeContext === "catalog" ? (
       <Stack gap="sm">
+        {(() => {
+          const isSaved = Boolean(selectedRecipeId && savedRecipeIds.has(selectedRecipeId))
+          return (
+            <Button
+              variant="secondary"
+              className="w-full rounded-full"
+              disabled={!selectedRecipeId}
+              onClick={() => {
+                if (!selectedRecipeId) return
+                if (isSaved) {
+                  handleUnsaveRecipeFromCatalog(selectedRecipeId)
+                } else {
+                  handleSaveRecipeFromCatalog(selectedRecipeId)
+                }
+              }}
+            >
+              {isSaved ? "保存解除" : "レシピ帳に保存"}
+            </Button>
+          )
+        })()}
         {recipeAccess.hasPrice ? (
           <Button
             className="w-full rounded-full"
@@ -823,14 +902,6 @@ export default function App() {
                 : "購入する"}
           </Button>
         ) : null}
-        <Button
-          variant="secondary"
-          className="w-full rounded-full"
-          disabled={!selectedRecipeId || savedRecipeIds.has(selectedRecipeId)}
-          onClick={() => selectedRecipeId && handleSaveRecipeFromCatalog(selectedRecipeId)}
-        >
-          {selectedRecipeId && savedRecipeIds.has(selectedRecipeId) ? "保存済み" : "レシピ帳に保存"}
-        </Button>
         <Button
           variant="secondary"
           className="w-full rounded-full"
@@ -913,14 +984,26 @@ export default function App() {
         献立表に登録する
       </Button>
       {setContext === "catalog" ? (
-        <Button
-          variant="secondary"
-          className="w-full rounded-full"
-          disabled={!selectedSetId || savedSetIds.has(selectedSetId)}
-          onClick={() => selectedSetId && handleSaveSetFromCatalog(selectedSetId)}
-        >
-          {selectedSetId && savedSetIds.has(selectedSetId) ? "保存済み" : "レシピ帳に保存"}
-        </Button>
+        (() => {
+          const isSaved = Boolean(selectedSetId && savedSetIds.has(selectedSetId))
+          return (
+            <Button
+              variant="secondary"
+              className="w-full rounded-full"
+              disabled={!selectedSetId}
+              onClick={() => {
+                if (!selectedSetId) return
+                if (isSaved) {
+                  handleUnsaveSetFromCatalog(selectedSetId)
+                } else {
+                  handleSaveSetFromCatalog(selectedSetId)
+                }
+              }}
+            >
+              {isSaved ? "保存解除" : "レシピ帳に保存"}
+            </Button>
+          )
+        })()
       ) : (
         <>
           <Cluster gap="sm" wrap="nowrap" className="w-full">
@@ -1222,6 +1305,20 @@ export default function App() {
             onToast={setToastMessage}
             onOpenArchive={() => navigate("archive")}
             onLogout={() => setLogoutConfirm(true)}
+          />
+        )
+      case "share-recipe":
+        return (
+          <ShareRecipeScreen
+            recipe={shareRecipeView ?? recipeDetailMock}
+            onBack={() => navigate("auth", true)}
+          />
+        )
+      case "share-set":
+        return (
+          <ShareSetScreen
+            recipeSet={shareSetView ?? recipeSetDetailMock}
+            onBack={() => navigate("auth", true)}
           />
         )
       case "onboarding":
