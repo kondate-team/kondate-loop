@@ -67,7 +67,12 @@ export function MyPageScreen({
     },
   }
   const [tab, setTab] = React.useState<"profile" | "settings">("profile")
-  const [pushEnabled, setPushEnabled] = React.useState(true)
+  const [pushEnabled, setPushEnabled] = React.useState(() => {
+    if (typeof Notification === "undefined") return false
+    return Notification.permission === "granted"
+  })
+  const [pushPending, setPushPending] = React.useState(false)
+  const [pushToken, setPushToken] = React.useState<string | null>(null)
   const [plan, setPlan] = React.useState<PlanId>("user")
   const [planOpen, setPlanOpen] = React.useState(false)
   const [planPending, setPlanPending] = React.useState<PlanId | null>(null)
@@ -83,12 +88,79 @@ export function MyPageScreen({
   const [cardName, setCardName] = React.useState("")
   const [cardNumber, setCardNumber] = React.useState("")
   const [cardExpiry, setCardExpiry] = React.useState("")
+  const [profileOpen, setProfileOpen] = React.useState(false)
+  const [displayName, setDisplayName] = React.useState("あなた")
+  const [profileBio, setProfileBio] = React.useState("")
+  const [profilePublic, setProfilePublic] = React.useState(true)
+  const [profileDraftName, setProfileDraftName] = React.useState(displayName)
+  const [profileDraftBio, setProfileDraftBio] = React.useState(profileBio)
+  const [profileDraftPublic, setProfileDraftPublic] = React.useState(profilePublic)
 
   const recipeCount = 0
   const setCount = 0
   const historyCount = 0
   const membershipCount = 0
   const purchaseCount = 0
+
+  const pushSupported =
+    typeof window !== "undefined" &&
+    "Notification" in window &&
+    "serviceWorker" in navigator
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return
+    const storedToken = window.localStorage.getItem("kondate-push-token")
+    if (storedToken) {
+      setPushToken(storedToken)
+      setPushEnabled(true)
+    }
+  }, [])
+
+  const togglePush = async () => {
+    if (!pushSupported) {
+      onToast?.("このブラウザではプッシュ通知を利用できません")
+      return
+    }
+    if (pushEnabled) {
+      setPushEnabled(false)
+      setPushToken(null)
+      window.localStorage.removeItem("kondate-push-token")
+      onToast?.("プッシュ通知をオフにしました")
+      return
+    }
+    setPushPending(true)
+    try {
+      const permission = await Notification.requestPermission()
+      if (permission !== "granted") {
+        onToast?.("通知の許可が必要です")
+        setPushEnabled(false)
+        return
+      }
+      await navigator.serviceWorker.register("/push-sw.js")
+      const token = `push-${Date.now()}`
+      window.localStorage.setItem("kondate-push-token", token)
+      setPushToken(token)
+      setPushEnabled(true)
+      onToast?.("プッシュ通知をオンにしました")
+    } finally {
+      setPushPending(false)
+    }
+  }
+
+  const openProfileEdit = () => {
+    setProfileDraftName(displayName)
+    setProfileDraftBio(profileBio)
+    setProfileDraftPublic(profilePublic)
+    setProfileOpen(true)
+  }
+
+  const saveProfile = () => {
+    setDisplayName(profileDraftName.trim() || "あなた")
+    setProfileBio(profileDraftBio.trim())
+    setProfilePublic(profileDraftPublic)
+    setProfileOpen(false)
+    onToast?.("プロフィールを更新しました")
+  }
 
   return (
     <ScreenContainer>
@@ -113,7 +185,7 @@ export function MyPageScreen({
                   <UserRound className="h-5 w-5" />
                 </div>
                 <Stack gap="xs">
-                  <H3 className="text-sm">あなた</H3>
+                  <H3 className="text-sm">{displayName}</H3>
                   <Muted className="text-xs">アカウント: {accountType === "creator" ? "クリエイター" : "ユーザー"}</Muted>
                   <Muted className="text-xs">
                     プラン: {activePlan.label}（{activePlan.price}）
@@ -128,6 +200,7 @@ export function MyPageScreen({
                   variant="ghost"
                   size="sm"
                   className={cn("text-xs", accountType === "user" ? "hidden" : "")}
+                  onClick={openProfileEdit}
                 >
                   プロフィール編集
                 </Button>
@@ -306,11 +379,15 @@ export function MyPageScreen({
                       <Button
                         variant={pushEnabled ? "secondary" : "ghost"}
                         size="sm"
-                        onClick={() => setPushEnabled((prev) => !prev)}
+                        onClick={togglePush}
+                        disabled={pushPending}
                       >
-                        {pushEnabled ? "ON" : "OFF"}
+                        {pushPending ? "処理中" : pushEnabled ? "ON" : "OFF"}
                       </Button>
                     </Cluster>
+                    {pushToken ? (
+                      <Muted className="text-xs">登録済み</Muted>
+                    ) : null}
                     <Cluster justify="between" align="center">
                       <Stack gap="xs">
                         <Body className="text-sm">フォロー通知</Body>
@@ -534,6 +611,67 @@ export function MyPageScreen({
                 閉じる
               </Button>
             </Stack>
+          </Surface>
+        </div>
+      ) : null}
+      {profileOpen ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4 py-6">
+          <Surface
+            tone="card"
+            density="none"
+            elevation="raised"
+            className="w-full max-w-sm overflow-hidden"
+          >
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <H2 className="text-lg">プロフィール編集</H2>
+              <button
+                type="button"
+                onClick={() => setProfileOpen(false)}
+                className="rounded-full border border-border px-3 py-1 text-xs"
+              >
+                閉じる
+              </button>
+            </div>
+            <div className="px-5 py-5">
+              <Stack gap="sm">
+                <label className="text-xs font-semibold text-muted-foreground">表示名</label>
+                <input
+                  className="w-full rounded-full border border-border bg-card px-4 py-2 text-sm"
+                  value={profileDraftName}
+                  onChange={(event) => setProfileDraftName(event.target.value)}
+                />
+                <label className="text-xs font-semibold text-muted-foreground">自己紹介</label>
+                <textarea
+                  className="w-full rounded-2xl border border-border bg-card px-4 py-3 text-sm"
+                  rows={4}
+                  value={profileDraftBio}
+                  onChange={(event) => setProfileDraftBio(event.target.value)}
+                />
+                <Cluster justify="between" align="center">
+                  <Stack gap="xs">
+                    <Body className="text-sm">公開ステータス</Body>
+                    <Muted className="text-xs">
+                      {profileDraftPublic ? "公開" : "非公開"}
+                    </Muted>
+                  </Stack>
+                  <Button
+                    variant={profileDraftPublic ? "secondary" : "ghost"}
+                    size="sm"
+                    onClick={() => setProfileDraftPublic((prev) => !prev)}
+                  >
+                    {profileDraftPublic ? "公開中" : "非公開"}
+                  </Button>
+                </Cluster>
+                <Cluster justify="end" gap="sm">
+                  <Button variant="ghost" size="sm" onClick={() => setProfileOpen(false)}>
+                    キャンセル
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={saveProfile}>
+                    保存する
+                  </Button>
+                </Cluster>
+              </Stack>
+            </div>
           </Surface>
         </div>
       ) : null}

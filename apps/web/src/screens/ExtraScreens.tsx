@@ -1,5 +1,5 @@
 import * as React from "react"
-import { ChevronRight, CheckCircle2, Calendar, CreditCard, UserRound, Crown, ChevronLeft, Search, Apple } from "lucide-react"
+import { CheckCircle2, Calendar, CreditCard, UserRound, Crown, ChevronLeft, Search, Apple } from "lucide-react"
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer"
 import { HeaderBar } from "@/components/layout/HeaderBar"
@@ -20,6 +20,7 @@ interface SubScreenProps {
 
 const normalizeNumberInput = (value: string) =>
   value.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1")
+const createSetId = () => `s-${Date.now()}`
 
 export function OnboardingScreen({ onStart }: { onStart?: () => void }) {
   return (
@@ -130,14 +131,14 @@ export function LoginScreen({
         <Surface tone="card" density="comfy" className="mt-6 rounded-3xl bg-card/90">
           <Stack gap="sm">
             <input
-              className="w-full rounded-full border border-border bg-card px-4 py-2 text-sm"
+              className="w-full rounded-full border border-border bg-card px-4 py-2 text-base"
               placeholder="メールアドレス"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               inputMode="email"
             />
             <input
-              className="w-full rounded-full border border-border bg-card px-4 py-2 text-sm"
+              className="w-full rounded-full border border-border bg-card px-4 py-2 text-base"
               placeholder="パスワード"
               type="password"
               value={password}
@@ -197,20 +198,20 @@ export function SignupScreen({
         <Surface tone="card" density="comfy" className="mt-6 rounded-3xl bg-card/90">
           <Stack gap="sm">
             <input
-              className="w-full rounded-full border border-border bg-card px-4 py-2 text-sm"
+              className="w-full rounded-full border border-border bg-card px-4 py-2 text-base"
               placeholder="表示名"
               value={name}
               onChange={(event) => setName(event.target.value)}
             />
             <input
-              className="w-full rounded-full border border-border bg-card px-4 py-2 text-sm"
+              className="w-full rounded-full border border-border bg-card px-4 py-2 text-base"
               placeholder="メールアドレス"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               inputMode="email"
             />
             <input
-              className="w-full rounded-full border border-border bg-card px-4 py-2 text-sm"
+              className="w-full rounded-full border border-border bg-card px-4 py-2 text-base"
               placeholder="パスワード"
               type="password"
               value={password}
@@ -689,7 +690,7 @@ export function SetCreateScreen({
       )
     ).slice(0, 4)
     onSave?.({
-      id: `s-${Date.now()}`,
+      id: createSetId(),
       title: trimmedName,
       count: selectedIds.length,
       recipeIds: selectedIds,
@@ -971,6 +972,8 @@ export function RecipeAddScreen({
   const [sourceUrl, setSourceUrl] = React.useState("")
   const [tagsText, setTagsText] = React.useState("")
   const [coverImageUrl, setCoverImageUrl] = React.useState("")
+  const [importText, setImportText] = React.useState("")
+  const [importError, setImportError] = React.useState<string | null>(null)
 
   const parseIngredients = (value: string) => {
     return value
@@ -989,6 +992,62 @@ export function RecipeAddScreen({
         }
         return { name: line, amount: 1, unit: "個" }
       })
+  }
+
+  const buildImportPreview = (
+    value: string
+  ): {
+    title: string
+    ingredientsText: string
+    stepsText: string
+    sourceUrl?: string
+    author?: string
+  } => {
+    const lines = value
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+    const urlLine = lines.find((line) => line.startsWith("http"))
+    const cleanedLines = lines.filter((line) => line !== urlLine)
+    const titleLine = cleanedLines[0] ?? "取り込みレシピ"
+    const ingredientsIndex = cleanedLines.findIndex((line) => line.includes("材料"))
+    const stepsIndex = cleanedLines.findIndex(
+      (line) => line.includes("作り方") || line.includes("手順")
+    )
+    const ingredientsLines =
+      ingredientsIndex >= 0
+        ? cleanedLines.slice(
+            ingredientsIndex + 1,
+            stepsIndex > ingredientsIndex ? stepsIndex : undefined
+          )
+        : cleanedLines.slice(1, stepsIndex > 1 ? stepsIndex : undefined)
+    const stepsLines =
+      stepsIndex >= 0 ? cleanedLines.slice(stepsIndex + 1) : cleanedLines.slice(2)
+
+    return {
+      title: titleLine,
+      ingredientsText: ingredientsLines.join("\n") || "材料 2人前",
+      stepsText: stepsLines.join("\n") || "作り方をここに入力してください",
+      sourceUrl: urlLine,
+    }
+  }
+
+  const handleImport = () => {
+    if (!importText.trim()) {
+      setImportError("取り込みたいURLまたはテキストを入力してください。")
+      return
+    }
+    setImportError(null)
+    const preview = buildImportPreview(importText)
+    setTitle(preview.title)
+    setIngredientsText(preview.ingredientsText)
+    setStepsText(preview.stepsText)
+    if (preview.sourceUrl) {
+      setSourceUrl(preview.sourceUrl)
+    }
+    if (preview.author) {
+      setAuthor(preview.author)
+    }
   }
 
   const handleSaveRecipe = () => {
@@ -1025,12 +1084,22 @@ export function RecipeAddScreen({
           <Surface tone="section" density="comfy" className="border-transparent">
             <Stack gap="sm">
               <H3 className="text-base">URLまたはテキストから取り込み</H3>
-                <textarea
-                  className="w-full rounded-2xl border border-border bg-card px-4 py-3 text-sm"
-                  rows={4}
-                  placeholder="レシピのURLやテキストを貼り付け"
-                />
-              <Button variant="secondary" size="sm" className="rounded-full">
+              <textarea
+                className="w-full rounded-2xl border border-border bg-card px-4 py-3 text-sm"
+                rows={4}
+                placeholder="レシピのURLやテキストを貼り付け"
+                value={importText}
+                onChange={(event) => setImportText(event.target.value)}
+              />
+              {importError ? (
+                <Muted className="text-xs text-destructive">{importError}</Muted>
+              ) : null}
+              <Button
+                variant="secondary"
+                size="sm"
+                className="rounded-full"
+                onClick={handleImport}
+              >
                 反映する
               </Button>
             </Stack>
@@ -1490,15 +1559,40 @@ export function NotificationsScreen({
   onOpenNotifications,
   onOpenFridge,
   onOpenNews,
+  pwaGuideAvailable,
+  onOpenPwaGuide,
+  onboardingGuideActive,
+  onboardingGuideStep,
+  onboardingNotificationSteps,
+  onCompleteOnboardingStep,
+  recipeSavedNoticeCount,
 }: SubScreenProps & {
   onOpenHome?: () => void
   onOpenHelp?: () => void
   onOpenNotifications?: () => void
   onOpenFridge?: () => void
   onOpenNews?: (item: { title: string; message: string; sourceName?: string; createdAt: string }) => void
+  pwaGuideAvailable?: boolean
+  onOpenPwaGuide?: () => void
+  onboardingGuideActive?: boolean
+  onboardingGuideStep?: number
+  onboardingNotificationSteps?: number[]
+  onCompleteOnboardingStep?: (step: number) => void
+  recipeSavedNoticeCount?: number
 }) {
+  type NotificationItem = {
+    id: string
+    category: "news" | "personal"
+    title: string
+    message: string
+    sourceName?: string
+    createdAt: string
+    readAt: string | null
+    kind?: "pwa-guide"
+    onboardingStep?: number
+  }
   const [tab, setTab] = React.useState<"news" | "personal">("news")
-  const [items, setItems] = React.useState(() => [
+  const [items, setItems] = React.useState<NotificationItem[]>(() => [
     {
       id: "n1",
       category: "news",
@@ -1506,15 +1600,6 @@ export function NotificationsScreen({
       message: "季節の献立をまとめた新しいセットを追加しました。",
       sourceName: "献立ループ事務局",
       createdAt: "2026-01-25T10:00:00.000Z",
-      readAt: null as string | null,
-    },
-    {
-      id: "n2",
-      category: "personal",
-      title: "レシピ帳に保存されました",
-      message: "購入したレシピがレシピ帳に追加されました。",
-      sourceName: "",
-      createdAt: "2026-01-25T08:40:00.000Z",
       readAt: null as string | null,
     },
     {
@@ -1531,6 +1616,103 @@ export function NotificationsScreen({
     title: string
     message: string
   } | null>(null)
+  const [activeGuideStep, setActiveGuideStep] = React.useState<number | null>(null)
+
+  const onboardingGuides = React.useMemo(
+    () => [
+      {
+        step: 1,
+        title: "献立を組んでみましょう",
+        message: "今週のこんだてにセットを反映すると買い物が楽になります。",
+      },
+      {
+        step: 2,
+        title: "レシピを登録してみましょう",
+        message: "レシピカタログから気になるレシピを保存してみましょう。",
+      },
+      {
+        step: 3,
+        title: "レシピ一覧を作ってみましょう",
+        message: "お気に入りのレシピを保存して、献立のベースに。",
+      },
+      {
+        step: 4,
+        title: "カテゴリを登録してみましょう",
+        message: "レシピ帳のカテゴリ管理から、自分の棚を作れます。",
+      },
+    ],
+    []
+  )
+
+  React.useEffect(() => {
+    if (!onboardingNotificationSteps || onboardingNotificationSteps.length === 0) return
+    setItems((prev) => {
+      const existingSteps = new Set(
+        prev
+          .filter((item) => item.id.startsWith("onboard-") && item.onboardingStep)
+          .map((item) => item.onboardingStep as number)
+      )
+      const now = new Date().toISOString()
+      const onboardingItems = onboardingNotificationSteps
+        .filter((step) => !existingSteps.has(step))
+        .map((step) => {
+          const guide = onboardingGuides.find((item) => item.step === step)
+          if (!guide) return null
+          return {
+            id: `onboard-${guide.step}`,
+            category: "personal",
+            title: guide.title,
+            message: guide.message,
+            sourceName: "",
+            createdAt: now,
+            readAt: null as string | null,
+            onboardingStep: guide.step,
+          } as NotificationItem
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null)
+      if (onboardingItems.length === 0) return prev
+      return [...onboardingItems, ...prev]
+    })
+  }, [onboardingNotificationSteps, onboardingGuides])
+
+  React.useEffect(() => {
+    if (!recipeSavedNoticeCount) return
+    setItems((prev) => {
+      const id = `saved-${recipeSavedNoticeCount}`
+      if (prev.some((item) => item.id === id)) return prev
+      const now = new Date().toISOString()
+      return [
+        {
+          id,
+          category: "personal",
+          title: "レシピ帳に保存されました",
+          message: "保存したレシピがレシピ帳に追加されました。",
+          sourceName: "",
+          createdAt: now,
+          readAt: null as string | null,
+        },
+        ...prev,
+      ]
+    })
+  }, [recipeSavedNoticeCount])
+
+  React.useEffect(() => {
+    if (!pwaGuideAvailable) return
+    setItems((prev) => {
+      if (prev.some((item) => item.id === "pwa-guide")) return prev
+      const now = new Date().toISOString()
+      const guideItem: NotificationItem = {
+        id: "pwa-guide",
+        category: "personal",
+        title: "ホーム画面に追加する方法",
+        message: "追加手順を確認して、すぐに開けるようにしましょう。",
+        createdAt: now,
+        readAt: null,
+        kind: "pwa-guide",
+      }
+      return [guideItem, ...prev]
+    })
+  }, [pwaGuideAvailable])
 
   const filteredItems = items
     .filter((item) => item.category === tab)
@@ -1552,6 +1734,14 @@ export function NotificationsScreen({
           : entry
       )
     )
+    if (item.kind === "pwa-guide") {
+      onOpenPwaGuide?.()
+      return
+    }
+    if (item.onboardingStep) {
+      setActiveGuideStep(item.onboardingStep)
+      return
+    }
     if (item.category === "news") {
       onOpenNews?.({
         title: item.title,
@@ -1568,6 +1758,13 @@ export function NotificationsScreen({
     const date = new Date(value)
     if (Number.isNaN(date.getTime())) return ""
     return `${date.getMonth() + 1}/${date.getDate()}`
+  }
+
+  const activeGuide = onboardingGuides.find((guide) => guide.step === activeGuideStep)
+  const handleGuideAdvance = () => {
+    if (!activeGuide) return
+    onCompleteOnboardingStep?.(activeGuide.step)
+    setActiveGuideStep(null)
   }
 
   return (
@@ -1648,33 +1845,46 @@ export function NotificationsScreen({
             />
           ) : (
             <Stack gap="sm">
-              {filteredItems.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => openNotification(item)}
-                  className={cn(
-                    "w-full rounded-2xl border border-border bg-card px-4 py-3 text-left",
-                    item.readAt ? "opacity-80" : "shadow-[0_0_0_1px_rgba(0,0,0,0.04)]"
-                  )}
-                >
-                  <Stack gap="xs">
-                    <Cluster justify="between" align="center">
-                      <Body className="text-sm font-semibold">{item.title}</Body>
-                      {!item.readAt ? (
-                        <span className="h-2 w-2 rounded-full bg-primary" />
+              {filteredItems.map((item) => {
+                const isNextGuide =
+                  onboardingGuideActive &&
+                  typeof item.onboardingStep === "number" &&
+                  item.onboardingStep === onboardingGuideStep
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => openNotification(item)}
+                    className={cn(
+                      "w-full rounded-2xl border border-border bg-card px-4 py-3 text-left",
+                      item.readAt ? "opacity-80" : "shadow-[0_0_0_1px_rgba(0,0,0,0.04)]"
+                    )}
+                  >
+                    <Stack gap="xs">
+                      <Cluster justify="between" align="center">
+                        <Cluster gap="xs" align="center">
+                          <Body className="text-sm font-semibold">{item.title}</Body>
+                          {isNextGuide ? (
+                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-900">
+                              次のガイド
+                            </span>
+                          ) : null}
+                        </Cluster>
+                        {!item.readAt ? (
+                          <span className="h-2 w-2 rounded-full bg-primary" />
+                        ) : null}
+                      </Cluster>
+                      {item.category === "news" ? (
+                        <Muted className="text-xs">
+                          {item.sourceName || "献立ループ事務局"}
+                        </Muted>
                       ) : null}
-                    </Cluster>
-                    {item.category === "news" ? (
-                      <Muted className="text-xs">
-                        {item.sourceName || "献立ループ事務局"}
-                      </Muted>
-                    ) : null}
-                    <Muted className="text-xs">{item.message}</Muted>
-                    <Muted className="text-xs">{formatSimpleDate(item.createdAt)}</Muted>
-                  </Stack>
-                </button>
-              ))}
+                      <Muted className="text-xs">{item.message}</Muted>
+                      <Muted className="text-xs">{formatSimpleDate(item.createdAt)}</Muted>
+                    </Stack>
+                  </button>
+                )
+              })}
             </Stack>
           )}
         </Stack>
@@ -1703,6 +1913,41 @@ export function NotificationsScreen({
                 <Body className="text-sm text-muted-foreground">
                   {activeNotification.message}
                 </Body>
+              </Stack>
+            </div>
+          </Surface>
+        </div>
+      ) : null}
+      {activeGuide ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4 py-6">
+          <Surface
+            tone="card"
+            density="none"
+            elevation="raised"
+            className="w-full max-w-sm overflow-hidden"
+          >
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <H2 className="text-lg">ガイド {activeGuide.step}/4</H2>
+              <button
+                type="button"
+                onClick={() => setActiveGuideStep(null)}
+                className="rounded-full border border-border px-3 py-1 text-xs"
+              >
+                閉じる
+              </button>
+            </div>
+            <div className="px-5 py-5">
+              <Stack gap="sm">
+                <H3 className="text-base">{activeGuide.title}</H3>
+                <Body className="text-sm text-muted-foreground">{activeGuide.message}</Body>
+                <Cluster gap="sm" justify="end">
+                  <Button variant="ghost" size="sm" onClick={() => setActiveGuideStep(null)}>
+                    後で見る
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={handleGuideAdvance}>
+                    完了
+                  </Button>
+                </Cluster>
               </Stack>
             </div>
           </Surface>
@@ -2012,24 +2257,137 @@ export function MembershipDetailScreen({ onBack }: SubScreenProps) {
 }
 
 export function ArchiveScreen({ onBack }: SubScreenProps) {
+  const [activeArchive, setActiveArchive] = React.useState<{
+    date: string
+    title: string
+    recipes: string[]
+  } | null>(null)
+  const year = 2026
+  const monthIndex = 0
+  const monthLabel = `${year}年${monthIndex + 1}月`
+  const firstDay = new Date(year, monthIndex, 1).getDay()
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate()
+  const archiveEntries = [
+    {
+      date: "2026-01-03",
+      title: "冬のほっこりセット",
+      recipes: ["甘辛チキン", "鮭ときのこのバター醤油", "味噌汁"],
+    },
+    {
+      date: "2026-01-08",
+      title: "時短3日セット",
+      recipes: ["豆腐とひき肉の旨辛丼", "サラダチキン", "きんぴら"],
+    },
+    {
+      date: "2026-01-15",
+      title: "作り置き活用セット",
+      recipes: ["肉じゃが", "ほうれん草おひたし", "鮭の塩焼き"],
+    },
+  ]
+  const entryMap = new Map(
+    archiveEntries.map((entry) => [entry.date, entry])
+  )
+  const calendarCells = Array.from({ length: firstDay + daysInMonth }, (_, index) => {
+    if (index < firstDay) return null
+    const day = index - firstDay + 1
+    const dateKey = `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+    return {
+      day,
+      dateKey,
+      entry: entryMap.get(dateKey) ?? null,
+    }
+  })
+
   return (
     <ScreenContainer>
       <HeaderBar variant="sub" title="アーカイブ" onBack={onBack} />
       <main className="px-5 pb-6 pt-4">
-        <Stack gap="sm">
-          {Array.from({ length: 5 }).map((_, idx) => (
-            <Surface key={idx} tone="card" density="compact">
+        <Stack gap="md">
+          <Surface tone="card" density="comfy" className="rounded-2xl">
+            <Stack gap="sm">
               <Cluster justify="between" align="center">
                 <Cluster gap="sm">
                   <Calendar className="h-4 w-4" />
-                  <Body className="text-sm">2026/01/0{idx + 1} の献立</Body>
+                  <H3 className="text-base">{monthLabel}</H3>
                 </Cluster>
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                <Muted className="text-xs">料理ログ</Muted>
               </Cluster>
-            </Surface>
-          ))}
+              <div className="grid grid-cols-7 gap-1 text-center text-[11px] text-muted-foreground">
+                {["日", "月", "火", "水", "木", "金", "土"].map((label) => (
+                  <div key={label}>{label}</div>
+                ))}
+              </div>
+              <div className="grid grid-cols-7 gap-1">
+                {calendarCells.map((cell, idx) =>
+                  cell ? (
+                    <button
+                      key={cell.dateKey}
+                      type="button"
+                      onClick={() => cell.entry && setActiveArchive(cell.entry)}
+                      className={cn(
+                        "flex h-10 flex-col items-center justify-center rounded-lg text-xs",
+                        cell.entry
+                          ? "bg-amber-50 text-amber-900"
+                          : "bg-muted/30 text-muted-foreground"
+                      )}
+                      disabled={!cell.entry}
+                    >
+                      <span>{cell.day}</span>
+                      {cell.entry ? <span className="mt-0.5 h-1 w-1 rounded-full bg-amber-400" /> : null}
+                    </button>
+                  ) : (
+                    <div key={`empty-${idx}`} className="h-10" />
+                  )
+                )}
+              </div>
+              <Muted className="text-xs">料理した日をタップすると詳細が見られます。</Muted>
+            </Stack>
+          </Surface>
         </Stack>
       </main>
+      {activeArchive ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4 py-6">
+          <Surface
+            tone="card"
+            density="none"
+            elevation="raised"
+            className="w-full max-w-sm overflow-hidden"
+          >
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <H2 className="text-lg">{activeArchive.title}</H2>
+              <button
+                type="button"
+                onClick={() => setActiveArchive(null)}
+                className="rounded-full border border-border px-3 py-1 text-xs"
+              >
+                閉じる
+              </button>
+            </div>
+            <div className="px-5 py-5">
+              <Stack gap="sm">
+                <Muted className="text-xs">{activeArchive.date}</Muted>
+                <Muted className="text-xs text-muted-foreground">スワイプで次へ</Muted>
+                <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">
+                  {activeArchive.recipes.map((recipe, idx) => (
+                    <div
+                      key={recipe}
+                      className="min-w-[220px] snap-center rounded-xl border border-border/60 bg-card px-4 py-4"
+                    >
+                      <div className="text-xs text-muted-foreground">
+                        {idx + 1}/{activeArchive.recipes.length}
+                      </div>
+                      <H3 className="mt-1 text-base">{recipe}</H3>
+                      <Muted className="mt-2 text-xs">
+                        料理ログの詳細は次の画面で確認できます。
+                      </Muted>
+                    </div>
+                  ))}
+                </div>
+              </Stack>
+            </div>
+          </Surface>
+        </div>
+      ) : null}
     </ScreenContainer>
   )
 }

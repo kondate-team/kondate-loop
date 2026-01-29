@@ -10,6 +10,7 @@ import { ShareModal } from "@/components/domain/ShareModal"
 import { ShareLinkModal } from "@/components/domain/ShareLinkModal"
 import { Button } from "@/components/ui/button"
 import { Stack, Cluster } from "@/components/primitives/Stack"
+import { Body, H2, H3, Muted } from "@/components/primitives/Typography"
 import type { CategoryItem } from "@/components/domain/CategoryTabs"
 import {
   recipeCategories,
@@ -28,6 +29,7 @@ import { KondateScreen } from "@/screens/KondateScreen"
 import { RecipeBookScreen } from "@/screens/RecipeBookScreen"
 import { RecipeCatalogScreen } from "@/screens/RecipeCatalogScreen"
 import { MyPageScreen } from "@/screens/MyPageScreen"
+import { ShareRecipeScreen, ShareSetScreen } from "@/screens/ShareScreens"
 import {
   OnboardingScreen,
   AuthLandingScreen,
@@ -59,6 +61,8 @@ export type ScreenKey =
   | "book"
   | "catalog"
   | "mypage"
+  | "share-recipe"
+  | "share-set"
   | "onboarding"
   | "set-select"
   | "set-create"
@@ -98,6 +102,18 @@ type SetTemplate = {
   description?: string
   recipeIds?: string[]
   imageUrl?: string
+}
+
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>
+}
+const getShareViewFromPath = (): { type: "recipe" | "set"; id: string } | null => {
+  if (typeof window === "undefined") return null
+  const match = window.location.pathname.match(/^\/share\/(recipe|set)\/([^/]+)$/)
+  if (!match) return null
+  const type = match[1] === "set" ? "set" : "recipe"
+  return { type, id: match[2] }
 }
 
 const buildShoppingItemsFromSet = (
@@ -149,7 +165,11 @@ const buildShoppingItemsFromSet = (
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = React.useState(false)
   const [hasOnboarded, setHasOnboarded] = React.useState(true)
-  const [screen, setScreen] = React.useState<ScreenKey>("auth")
+  const [screen, setScreen] = React.useState<ScreenKey>(() => {
+    const shareView = getShareViewFromPath()
+    if (!shareView) return "auth"
+    return shareView.type === "recipe" ? "share-recipe" : "share-set"
+  })
   const [, setHistory] = React.useState<ScreenKey[]>(["auth"])
   const [authError, setAuthError] = React.useState<{ title: string; message: string } | null>(null)
   const [logoutConfirm, setLogoutConfirm] = React.useState(false)
@@ -194,6 +214,15 @@ export default function App() {
     title: string
     type: "recipe" | "set"
   } | null>(null)
+  const [pwaPromptEvent, setPwaPromptEvent] = React.useState<BeforeInstallPromptEvent | null>(null)
+  const [pwaDismissed, setPwaDismissed] = React.useState(false)
+  const [pwaInstalled, setPwaInstalled] = React.useState(false)
+  const [pwaGuideOpen, setPwaGuideOpen] = React.useState(false)
+  const [pwaGuideHidden, setPwaGuideHidden] = React.useState(false)
+  const [shareView, setShareView] = React.useState<{
+    type: "recipe" | "set"
+    id: string
+  } | null>(() => getShareViewFromPath())
   const [completionOpen, setCompletionOpen] = React.useState(false)
   const [currentSet, setCurrentSet] = React.useState<AnySet | null>(() => mockSets[0] ?? null)
   const [nextSet, setNextSet] = React.useState<AnySet | null>(() => mockSets[1] ?? null)
@@ -203,6 +232,18 @@ export default function App() {
   const [deletedFridgeItems, setDeletedFridgeItems] = React.useState<
     { id: string; name: string; amount: number; unit: string; deletedAt: string }[]
   >([])
+  const [onboardingGuideActive, setOnboardingGuideActive] = React.useState(false)
+  const [onboardingGuideStep, setOnboardingGuideStep] = React.useState(0)
+  const [onboardingUnlockedSteps, setOnboardingUnlockedSteps] = React.useState<number[]>([])
+  const [onboardingCompletedSteps, setOnboardingCompletedSteps] = React.useState<number[]>([])
+  const [onboardingSnoozedStep, setOnboardingSnoozedStep] = React.useState<number | null>(
+    null
+  )
+  const [onboardingSnoozedScreen, setOnboardingSnoozedScreen] = React.useState<ScreenKey | null>(
+    null
+  )
+  const [recipeSavedNoticeCount, setRecipeSavedNoticeCount] = React.useState(0)
+  const [catalogSavedOnce, setCatalogSavedOnce] = React.useState(false)
   const categoryThemePalette = React.useMemo(
     () =>
       recipeCategories
@@ -278,11 +319,25 @@ export default function App() {
     setScreen(next)
   }, [])
 
+  React.useEffect(() => {
+    const match = window.location.pathname.match(/^\/share\/(recipe|set)\/([^/]+)$/)
+    if (!match) return
+    const type = match[1] === "set" ? "set" : "recipe"
+    const id = match[2]
+    setShareView({ type, id })
+    navigate(type === "recipe" ? "share-recipe" : "share-set", true)
+  }, [navigate])
+
   const completeLogin = (firstTime?: boolean) => {
     setIsAuthenticated(true)
     if (firstTime) {
-      setHasOnboarded(false)
-      navigate("onboarding", true)
+      setOnboardingGuideActive(false)
+      setOnboardingGuideStep(0)
+      setOnboardingUnlockedSteps([])
+      setOnboardingCompletedSteps([])
+      setCatalogSavedOnce(false)
+      setRecipeSavedNoticeCount(0)
+      navigate("kondate", true)
       return
     }
     navigate(hasOnboarded ? "kondate" : "onboarding", true)
@@ -317,12 +372,141 @@ export default function App() {
     navigate("auth", true)
   }
 
+  const handlePwaInstall = async () => {
+    if (!pwaPromptEvent) return
+    await pwaPromptEvent.prompt()
+    const choice = await pwaPromptEvent.userChoice
+    setPwaDismissed(true)
+    if (choice.outcome === "accepted") {
+      setPwaInstalled(true)
+      setToastMessage("ホーム画面に追加しました")
+    }
+  }
+
+  const openPwaGuide = () => {
+    setPwaGuideOpen(true)
+  }
+
+  const unlockOnboardingStep = React.useCallback((step: number, activate = false) => {
+    setOnboardingUnlockedSteps((prev) => (prev.includes(step) ? prev : [...prev, step]))
+    if (activate) {
+      setOnboardingGuideStep(step)
+      setOnboardingGuideActive(true)
+    }
+  }, [])
+  const completeOnboardingStep = React.useCallback(
+    (step: number) => {
+      setOnboardingCompletedSteps((prev) => (prev.includes(step) ? prev : [...prev, step]))
+      if (onboardingSnoozedStep === step) {
+        setOnboardingSnoozedStep(null)
+        setOnboardingSnoozedScreen(null)
+      }
+      if (onboardingGuideStep === step) {
+        setOnboardingGuideActive(false)
+        setOnboardingGuideStep(0)
+      }
+    },
+    [onboardingGuideStep, onboardingSnoozedStep]
+  )
+  const closeOnboardingGuide = () => {
+    if (activeOnboardingGuide) {
+      setOnboardingSnoozedStep(activeOnboardingGuide.step)
+      setOnboardingSnoozedScreen(screen)
+    }
+    setOnboardingGuideActive(false)
+  }
+  const completeOnboardingGuide = () => {
+    if (!activeOnboardingGuide) return
+    completeOnboardingStep(activeOnboardingGuide.step)
+  }
+
   React.useEffect(() => {
     if (!toastMessage) return
     const timer = window.setTimeout(() => setToastMessage(null), 2200)
     return () => window.clearTimeout(timer)
   }, [toastMessage])
 
+  React.useEffect(() => {
+    if (typeof window === "undefined") return
+    const hidden = window.localStorage.getItem("kondate-pwa-guide-hidden")
+    if (hidden === "true") {
+      setPwaGuideHidden(true)
+      setPwaDismissed(true)
+    }
+  }, [setPwaDismissed, setPwaGuideHidden])
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return
+    const isStandalone =
+      window.matchMedia?.("(display-mode: standalone)").matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone
+    if (isStandalone) {
+      setPwaInstalled(true)
+    }
+    const handlePrompt = (event: Event) => {
+      event.preventDefault()
+      setPwaPromptEvent(event as BeforeInstallPromptEvent)
+    }
+    const handleInstalled = () => {
+      setPwaInstalled(true)
+      setPwaPromptEvent(null)
+    }
+    window.addEventListener("beforeinstallprompt", handlePrompt)
+    window.addEventListener("appinstalled", handleInstalled)
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handlePrompt)
+      window.removeEventListener("appinstalled", handleInstalled)
+    }
+  }, [setPwaInstalled, setPwaPromptEvent])
+
+  React.useEffect(() => {
+    if (!isAuthenticated) return
+    if (onboardingGuideActive) return
+    const isCompleted = (step: number) => onboardingCompletedSteps.includes(step)
+    const isSnoozed =
+      onboardingSnoozedStep !== null && onboardingSnoozedScreen === screen
+    if (screen === "kondate") {
+      if (!isCompleted(1) && !(isSnoozed && onboardingSnoozedStep === 1)) {
+        unlockOnboardingStep(1, true)
+      }
+      return
+    }
+    if (screen === "catalog") {
+      if (!isCompleted(2) && !(isSnoozed && onboardingSnoozedStep === 2)) {
+        unlockOnboardingStep(2, true)
+      }
+      return
+    }
+    if (screen === "book") {
+      if (!isCompleted(3) && !(isSnoozed && onboardingSnoozedStep === 3)) {
+        unlockOnboardingStep(3, true)
+        return
+      }
+      if (
+        catalogSavedOnce &&
+        !isCompleted(4) &&
+        !(isSnoozed && onboardingSnoozedStep === 4)
+      ) {
+        unlockOnboardingStep(4, true)
+      }
+    }
+  }, [
+    screen,
+    isAuthenticated,
+    onboardingGuideActive,
+    onboardingCompletedSteps,
+    catalogSavedOnce,
+    onboardingSnoozedStep,
+    onboardingSnoozedScreen,
+    unlockOnboardingStep,
+  ])
+
+  React.useEffect(() => {
+    if (!onboardingSnoozedScreen) return
+    if (onboardingSnoozedScreen === screen) return
+    setOnboardingSnoozedScreen(null)
+    setOnboardingSnoozedStep(null)
+  }, [screen, onboardingSnoozedScreen])
   const goBack = React.useCallback(() => {
     setHistory((prev) => {
       if (prev.length <= 1) return prev
@@ -440,6 +624,44 @@ export default function App() {
     shareTarget?.type === "set" ? mySets.find((item) => item.id === shareTarget.id) : null
   const shareLinkTitle = shareLink?.title ?? ""
   const shareLinkTypeLabel = shareLink?.type === "set" ? "レシピセット" : "レシピ"
+  const onboardingGuides = React.useMemo(
+    () => [
+      {
+        step: 1,
+        title: "献立を組んでみましょう",
+        message: "今週のこんだてにセットを反映すると買い物が楽になります。",
+      },
+      {
+        step: 2,
+        title: "レシピを登録してみましょう",
+        message: "レシピカタログから気になるレシピを保存してみましょう。",
+      },
+      {
+        step: 3,
+        title: "レシピ一覧を作ってみましょう",
+        message: "お気に入りのレシピを保存して、献立のベースに。",
+      },
+      {
+        step: 4,
+        title: "カテゴリを登録してみましょう",
+        message: "レシピ帳のカテゴリ管理から、自分の棚を作れます。",
+      },
+    ],
+    []
+  )
+  const activeOnboardingGuide = onboardingGuides.find(
+    (guide) => guide.step === onboardingGuideStep
+  )
+  const shareRecipeView =
+    shareView?.type === "recipe"
+      ? recipePool.find((item) => item.id === shareView.id) ?? recipeDetailMock
+      : null
+  const shareSetView =
+    shareView?.type === "set"
+      ? publicSets.find((item) => item.id === shareView.id) ??
+        mySets.find((item) => item.id === shareView.id) ??
+        recipeSetDetailMock
+      : null
   const markPurchasedBadges = (badges?: StatusBadge[]) => {
     const filtered = (badges ?? []).filter(
       (badge) => !["フリー", "購入済み"].includes(badge.label) && !badge.label.includes("¥")
@@ -464,7 +686,18 @@ export default function App() {
       return
     }
     setMyRecipes((prev) => [...prev, { ...recipe, source: "catalog" }])
+    setCatalogSavedOnce(true)
+    setRecipeSavedNoticeCount((prev) => prev + 1)
     setToastMessage("レシピ帳に保存しました")
+  }
+
+  function handleUnsaveRecipeFromCatalog(id: string) {
+    if (!savedRecipeIds.has(id)) {
+      setToastMessage("まだ保存されていません")
+      return
+    }
+    setMyRecipes((prev) => prev.filter((item) => item.id !== id))
+    setToastMessage("保存を解除しました")
   }
 
   function handleSaveSetFromCatalog(id: string) {
@@ -485,6 +718,15 @@ export default function App() {
     }
     setMySets((prev) => [...prev, { ...setItem, source: "catalog" }])
     setToastMessage("レシピ帳に保存しました")
+  }
+
+  function handleUnsaveSetFromCatalog(id: string) {
+    if (!savedSetIds.has(id)) {
+      setToastMessage("まだ保存されていません")
+      return
+    }
+    setMySets((prev) => prev.filter((item) => item.id !== id))
+    setToastMessage("保存を解除しました")
   }
 
   function handlePurchaseRecipeFromCatalog(id: string) {
@@ -529,10 +771,13 @@ export default function App() {
     if (!purchaseConfirm) return
     if (purchaseConfirm.type === "recipe") {
       handlePurchaseRecipeFromCatalog(purchaseConfirm.id)
+      closeRecipe()
     } else {
       handlePurchaseSetFromCatalog(purchaseConfirm.id)
+      closeSet()
     }
     setPurchaseConfirm(null)
+    navigate("catalog", true)
   }
 
   const closePurchasePrompt = () => setPurchasePrompt(null)
@@ -545,6 +790,7 @@ export default function App() {
       handleSaveSetFromCatalog(purchasePrompt.id)
     }
     setPurchasePrompt(null)
+    navigate("catalog", true)
   }
 
   function handleDeleteRecipe(id: string) {
@@ -767,6 +1013,26 @@ export default function App() {
   const recipeFooter =
     recipeContext === "kondate" ? undefined : recipeContext === "catalog" ? (
       <Stack gap="sm">
+        {(() => {
+          const isSaved = Boolean(selectedRecipeId && savedRecipeIds.has(selectedRecipeId))
+          return (
+            <Button
+              variant="secondary"
+              className="w-full rounded-full"
+              disabled={!selectedRecipeId}
+              onClick={() => {
+                if (!selectedRecipeId) return
+                if (isSaved) {
+                  handleUnsaveRecipeFromCatalog(selectedRecipeId)
+                } else {
+                  handleSaveRecipeFromCatalog(selectedRecipeId)
+                }
+              }}
+            >
+              {isSaved ? "保存解除" : "レシピ帳に保存"}
+            </Button>
+          )
+        })()}
         {recipeAccess.hasPrice ? (
           <Button
             className="w-full rounded-full"
@@ -780,14 +1046,6 @@ export default function App() {
                 : "購入する"}
           </Button>
         ) : null}
-        <Button
-          variant="secondary"
-          className="w-full rounded-full"
-          disabled={!selectedRecipeId || savedRecipeIds.has(selectedRecipeId)}
-          onClick={() => selectedRecipeId && handleSaveRecipeFromCatalog(selectedRecipeId)}
-        >
-          {selectedRecipeId && savedRecipeIds.has(selectedRecipeId) ? "保存済み" : "レシピ帳に保存"}
-        </Button>
         <Button
           variant="secondary"
           className="w-full rounded-full"
@@ -870,14 +1128,26 @@ export default function App() {
         献立表に登録する
       </Button>
       {setContext === "catalog" ? (
-        <Button
-          variant="secondary"
-          className="w-full rounded-full"
-          disabled={!selectedSetId || savedSetIds.has(selectedSetId)}
-          onClick={() => selectedSetId && handleSaveSetFromCatalog(selectedSetId)}
-        >
-          {selectedSetId && savedSetIds.has(selectedSetId) ? "保存済み" : "レシピ帳に保存"}
-        </Button>
+        (() => {
+          const isSaved = Boolean(selectedSetId && savedSetIds.has(selectedSetId))
+          return (
+            <Button
+              variant="secondary"
+              className="w-full rounded-full"
+              disabled={!selectedSetId}
+              onClick={() => {
+                if (!selectedSetId) return
+                if (isSaved) {
+                  handleUnsaveSetFromCatalog(selectedSetId)
+                } else {
+                  handleSaveSetFromCatalog(selectedSetId)
+                }
+              }}
+            >
+              {isSaved ? "保存解除" : "レシピ帳に保存"}
+            </Button>
+          )
+        })()
       ) : (
         <>
           <Cluster gap="sm" wrap="nowrap" className="w-full">
@@ -1181,6 +1451,20 @@ export default function App() {
             onLogout={() => setLogoutConfirm(true)}
           />
         )
+      case "share-recipe":
+        return (
+          <ShareRecipeScreen
+            recipe={shareRecipeView ?? recipeDetailMock}
+            onBack={() => navigate("auth", true)}
+          />
+        )
+      case "share-set":
+        return (
+          <ShareSetScreen
+            recipeSet={shareSetView ?? recipeSetDetailMock}
+            onBack={() => navigate("auth", true)}
+          />
+        )
       case "onboarding":
         return (
           <OnboardingScreen
@@ -1254,6 +1538,13 @@ export default function App() {
             onOpenHelp={() => navigate("onboarding")}
             onOpenNotifications={() => navigate("notifications")}
             onOpenFridge={() => setFridgeOpen(true)}
+            pwaGuideAvailable={isAuthenticated}
+            onOpenPwaGuide={openPwaGuide}
+            onboardingGuideActive={onboardingGuideActive}
+            onboardingGuideStep={onboardingGuideStep}
+            onboardingNotificationSteps={onboardingUnlockedSteps}
+            onCompleteOnboardingStep={completeOnboardingStep}
+            recipeSavedNoticeCount={recipeSavedNoticeCount}
             onOpenNews={(item) => {
               setActiveNews(item)
               navigate("news-detail")
@@ -1284,6 +1575,55 @@ export default function App() {
   return (
     <div>
       {renderScreen()}
+      {!pwaDismissed && !pwaInstalled && isAuthenticated ? (
+        <div className="fixed bottom-24 left-0 right-0 z-40 flex justify-center px-4">
+          <div className="w-full max-w-[430px] rounded-2xl border border-border bg-card px-4 py-3 shadow-lg">
+            <Stack gap="sm">
+              <div className="text-sm font-semibold">ホーム画面に追加できます</div>
+              <div className="text-xs text-muted-foreground">
+                アプリのように素早く開けるようになります。
+              </div>
+              <Cluster gap="sm" justify="end">
+                <Button variant="ghost" size="sm" onClick={() => setPwaDismissed(true)}>
+                  あとで
+                </Button>
+                {pwaPromptEvent ? (
+                  <Button variant="secondary" size="sm" onClick={handlePwaInstall}>
+                    追加する
+                  </Button>
+                ) : (
+                  <Button variant="secondary" size="sm" onClick={openPwaGuide}>
+                    追加方法
+                  </Button>
+                )}
+              </Cluster>
+            </Stack>
+          </div>
+        </div>
+      ) : null}
+      {onboardingGuideActive && activeOnboardingGuide && isAuthenticated ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4 py-6">
+          <Stack
+            className="w-full max-w-sm overflow-hidden rounded-2xl border border-border bg-card px-5 py-5"
+            gap="sm"
+          >
+            <Muted className="text-xs">はじめてのこんだてLoop</Muted>
+            <H2 className="text-lg">
+              {activeOnboardingGuide.step}/{onboardingGuides.length}
+            </H2>
+            <H3 className="text-base">{activeOnboardingGuide.title}</H3>
+            <Body className="text-sm text-muted-foreground">{activeOnboardingGuide.message}</Body>
+            <Cluster gap="sm" justify="end">
+              <Button variant="ghost" size="sm" onClick={closeOnboardingGuide}>
+                後で見る
+              </Button>
+              <Button variant="secondary" size="sm" onClick={completeOnboardingGuide}>
+                完了
+              </Button>
+            </Cluster>
+          </Stack>
+        </div>
+      ) : null}
       {isAuthenticated && rootScreens.includes(screen) ? (
         <BottomNav active={screen as NavItemKey} onChange={handleNav} />
       ) : null}
@@ -1473,6 +1813,54 @@ export default function App() {
             <Button className="mt-5 w-full rounded-full" onClick={completeCurrentSet}>
               閉じる
             </Button>
+          </div>
+        </div>
+      ) : null}
+      {pwaGuideOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6">
+          <div className="w-full max-w-sm overflow-hidden rounded-3xl bg-card px-5 py-5 text-left shadow-xl">
+            <div className="text-center">
+              <H2 className="text-lg">ホーム画面に追加しよう</H2>
+              <Muted className="mt-1 text-xs">
+                追加するとすぐに開けて便利になります
+              </Muted>
+            </div>
+            <div className="mt-4 space-y-3 text-sm">
+              <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-3">
+                <div className="text-xs font-semibold text-muted-foreground">STEP 1</div>
+                <div className="mt-1">URL欄の共有ボタンをタップ</div>
+              </div>
+              <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-3">
+                <div className="text-xs font-semibold text-muted-foreground">STEP 2</div>
+                <div className="mt-1">「ホーム画面に追加」をタップ</div>
+              </div>
+              <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-3">
+                <div className="text-xs font-semibold text-muted-foreground">STEP 3</div>
+                <div className="mt-1">ホーム画面のアイコンから起動</div>
+              </div>
+            </div>
+            <div className="mt-4 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !pwaGuideHidden
+                  setPwaGuideHidden(next)
+                  window.localStorage.setItem("kondate-pwa-guide-hidden", String(next))
+                  if (next) setPwaDismissed(true)
+                }}
+                className="flex items-center gap-2 text-xs text-muted-foreground"
+              >
+                <span
+                  className={`h-4 w-4 rounded border ${
+                    pwaGuideHidden ? "bg-primary border-primary" : "border-border"
+                  }`}
+                />
+                今後表示しない
+              </button>
+              <Button variant="secondary" size="sm" onClick={() => setPwaGuideOpen(false)}>
+                閉じる
+              </Button>
+            </div>
           </div>
         </div>
       ) : null}
