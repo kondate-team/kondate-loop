@@ -467,6 +467,15 @@ export default function App() {
     setToastMessage("レシピ帳に保存しました")
   }
 
+  function handleUnsaveRecipeFromCatalog(id: string) {
+    if (!savedRecipeIds.has(id)) {
+      setToastMessage("まだ保存されていません")
+      return
+    }
+    setMyRecipes((prev) => prev.filter((item) => item.id !== id))
+    setToastMessage("保存を解除しました")
+  }
+
   function handleSaveSetFromCatalog(id: string) {
     if (savedSetIds.has(id)) {
       setToastMessage("保存済みです")
@@ -485,6 +494,15 @@ export default function App() {
     }
     setMySets((prev) => [...prev, { ...setItem, source: "catalog" }])
     setToastMessage("レシピ帳に保存しました")
+  }
+
+  function handleUnsaveSetFromCatalog(id: string) {
+    if (!savedSetIds.has(id)) {
+      setToastMessage("まだ保存されていません")
+      return
+    }
+    setMySets((prev) => prev.filter((item) => item.id !== id))
+    setToastMessage("保存を解除しました")
   }
 
   function handlePurchaseRecipeFromCatalog(id: string) {
@@ -767,6 +785,26 @@ export default function App() {
   const recipeFooter =
     recipeContext === "kondate" ? undefined : recipeContext === "catalog" ? (
       <Stack gap="sm">
+        {(() => {
+          const isSaved = Boolean(selectedRecipeId && savedRecipeIds.has(selectedRecipeId))
+          return (
+            <Button
+              variant="secondary"
+              className="w-full rounded-full"
+              disabled={!selectedRecipeId}
+              onClick={() => {
+                if (!selectedRecipeId) return
+                if (isSaved) {
+                  handleUnsaveRecipeFromCatalog(selectedRecipeId)
+                } else {
+                  handleSaveRecipeFromCatalog(selectedRecipeId)
+                }
+              }}
+            >
+              {isSaved ? "保存解除" : "レシピ帳に保存"}
+            </Button>
+          )
+        })()}
         {recipeAccess.hasPrice ? (
           <Button
             className="w-full rounded-full"
@@ -780,14 +818,6 @@ export default function App() {
                 : "購入する"}
           </Button>
         ) : null}
-        <Button
-          variant="secondary"
-          className="w-full rounded-full"
-          disabled={!selectedRecipeId || savedRecipeIds.has(selectedRecipeId)}
-          onClick={() => selectedRecipeId && handleSaveRecipeFromCatalog(selectedRecipeId)}
-        >
-          {selectedRecipeId && savedRecipeIds.has(selectedRecipeId) ? "保存済み" : "レシピ帳に保存"}
-        </Button>
         <Button
           variant="secondary"
           className="w-full rounded-full"
@@ -870,14 +900,26 @@ export default function App() {
         献立表に登録する
       </Button>
       {setContext === "catalog" ? (
-        <Button
-          variant="secondary"
-          className="w-full rounded-full"
-          disabled={!selectedSetId || savedSetIds.has(selectedSetId)}
-          onClick={() => selectedSetId && handleSaveSetFromCatalog(selectedSetId)}
-        >
-          {selectedSetId && savedSetIds.has(selectedSetId) ? "保存済み" : "レシピ帳に保存"}
-        </Button>
+        (() => {
+          const isSaved = Boolean(selectedSetId && savedSetIds.has(selectedSetId))
+          return (
+            <Button
+              variant="secondary"
+              className="w-full rounded-full"
+              disabled={!selectedSetId}
+              onClick={() => {
+                if (!selectedSetId) return
+                if (isSaved) {
+                  handleUnsaveSetFromCatalog(selectedSetId)
+                } else {
+                  handleSaveSetFromCatalog(selectedSetId)
+                }
+              }}
+            >
+              {isSaved ? "保存解除" : "レシピ帳に保存"}
+            </Button>
+          )
+        })()
       ) : (
         <>
           <Cluster gap="sm" wrap="nowrap" className="w-full">
