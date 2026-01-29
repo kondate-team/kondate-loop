@@ -67,7 +67,12 @@ export function MyPageScreen({
     },
   }
   const [tab, setTab] = React.useState<"profile" | "settings">("profile")
-  const [pushEnabled, setPushEnabled] = React.useState(true)
+  const [pushEnabled, setPushEnabled] = React.useState(() => {
+    if (typeof Notification === "undefined") return false
+    return Notification.permission === "granted"
+  })
+  const [pushPending, setPushPending] = React.useState(false)
+  const [pushToken, setPushToken] = React.useState<string | null>(null)
   const [plan, setPlan] = React.useState<PlanId>("user")
   const [planOpen, setPlanOpen] = React.useState(false)
   const [planPending, setPlanPending] = React.useState<PlanId | null>(null)
@@ -96,6 +101,51 @@ export function MyPageScreen({
   const historyCount = 0
   const membershipCount = 0
   const purchaseCount = 0
+
+  const pushSupported =
+    typeof window !== "undefined" &&
+    "Notification" in window &&
+    "serviceWorker" in navigator
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return
+    const storedToken = window.localStorage.getItem("kondate-push-token")
+    if (storedToken) {
+      setPushToken(storedToken)
+      setPushEnabled(true)
+    }
+  }, [])
+
+  const togglePush = async () => {
+    if (!pushSupported) {
+      onToast?.("このブラウザではプッシュ通知を利用できません")
+      return
+    }
+    if (pushEnabled) {
+      setPushEnabled(false)
+      setPushToken(null)
+      window.localStorage.removeItem("kondate-push-token")
+      onToast?.("プッシュ通知をオフにしました")
+      return
+    }
+    setPushPending(true)
+    try {
+      const permission = await Notification.requestPermission()
+      if (permission !== "granted") {
+        onToast?.("通知の許可が必要です")
+        setPushEnabled(false)
+        return
+      }
+      await navigator.serviceWorker.register("/push-sw.js")
+      const token = `push-${Date.now()}`
+      window.localStorage.setItem("kondate-push-token", token)
+      setPushToken(token)
+      setPushEnabled(true)
+      onToast?.("プッシュ通知をオンにしました")
+    } finally {
+      setPushPending(false)
+    }
+  }
 
   const openProfileEdit = () => {
     setProfileDraftName(displayName)
@@ -329,11 +379,15 @@ export function MyPageScreen({
                       <Button
                         variant={pushEnabled ? "secondary" : "ghost"}
                         size="sm"
-                        onClick={() => setPushEnabled((prev) => !prev)}
+                        onClick={togglePush}
+                        disabled={pushPending}
                       >
-                        {pushEnabled ? "ON" : "OFF"}
+                        {pushPending ? "処理中" : pushEnabled ? "ON" : "OFF"}
                       </Button>
                     </Cluster>
+                    {pushToken ? (
+                      <Muted className="text-xs">登録済み</Muted>
+                    ) : null}
                     <Cluster justify="between" align="center">
                       <Stack gap="xs">
                         <Body className="text-sm">フォロー通知</Body>
