@@ -492,12 +492,12 @@ export function RecipeCatalogScreen({
                             statusBadges={recipe.statusBadges}
                             imageUrl={recipe.imageUrl}
                             variant="selectable"
-                            footerAction={renderCatalogActions(
-                              recipe.statusBadges,
-                              savedRecipeIds.has(recipe.id),
-                              () => onSaveRecipe(recipe.id),
-                              () => onPurchaseRecipe(recipe.id)
-                            )}
+                              footerAction={renderCatalogActions(
+                                recipe.statusBadges,
+                                savedRecipeIds.has(recipe.id),
+                                () => onSaveRecipe(recipe.id),
+                                () => onPurchaseRecipe(recipe.id)
+                              )}
                             onAuthorClick={() => onOpenChef?.(recipe.author)}
                             onClick={() => onOpenRecipe(recipe.id)}
                           />
@@ -522,12 +522,12 @@ export function RecipeCatalogScreen({
                             statusBadges={set.statusBadges}
                             imageUrl={set.imageUrl}
                             size="selectable"
-                            footerAction={renderCatalogActions(
-                              set.statusBadges,
-                              savedSetIds.has(set.id),
-                              () => onSaveSet(set.id),
-                              () => onPurchaseSet(set.id)
-                            )}
+                              footerAction={renderCatalogActions(
+                                set.statusBadges,
+                                savedSetIds.has(set.id),
+                                () => onSaveSet(set.id),
+                                () => onPurchaseSet(set.id)
+                              )}
                             onAuthorClick={() => onOpenChef?.(set.author)}
                             onClick={() => onOpenSet?.(set.id)}
                           />
