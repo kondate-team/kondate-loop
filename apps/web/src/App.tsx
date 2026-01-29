@@ -104,6 +104,10 @@ type SetTemplate = {
   imageUrl?: string
 }
 
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>
+}
 const getShareViewFromPath = (): { type: "recipe" | "set"; id: string } | null => {
   if (typeof window === "undefined") return null
   const match = window.location.pathname.match(/^\/share\/(recipe|set)\/([^/]+)$/)
@@ -215,6 +219,9 @@ export default function App() {
     id: string
   } | null>(() => getShareViewFromPath())
   const [completionOpen, setCompletionOpen] = React.useState(false)
+  const [pwaPromptEvent, setPwaPromptEvent] = React.useState<BeforeInstallPromptEvent | null>(null)
+  const [pwaDismissed, setPwaDismissed] = React.useState(false)
+  const [pwaInstalled, setPwaInstalled] = React.useState(false)
   const [currentSet, setCurrentSet] = React.useState<AnySet | null>(() => mockSets[0] ?? null)
   const [nextSet, setNextSet] = React.useState<AnySet | null>(() => mockSets[1] ?? null)
   const [selectingFor, setSelectingFor] = React.useState<"current" | "next">("current")
@@ -363,6 +370,17 @@ export default function App() {
     navigate("auth", true)
   }
 
+  const handlePwaInstall = async () => {
+    if (!pwaPromptEvent) return
+    await pwaPromptEvent.prompt()
+    const choice = await pwaPromptEvent.userChoice
+    setPwaDismissed(true)
+    if (choice.outcome === "accepted") {
+      setPwaInstalled(true)
+      setToastMessage("ホーム画面に追加しました")
+    }
+  }
+
   const unlockOnboardingStep = React.useCallback((step: number, activate = false) => {
     setOnboardingUnlockedSteps((prev) => (prev.includes(step) ? prev : [...prev, step]))
     if (activate) {
@@ -401,6 +419,30 @@ export default function App() {
     const timer = window.setTimeout(() => setToastMessage(null), 2200)
     return () => window.clearTimeout(timer)
   }, [toastMessage])
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return
+    const isStandalone =
+      window.matchMedia?.("(display-mode: standalone)").matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone
+    if (isStandalone) {
+      setPwaInstalled(true)
+    }
+    const handlePrompt = (event: Event) => {
+      event.preventDefault()
+      setPwaPromptEvent(event as BeforeInstallPromptEvent)
+    }
+    const handleInstalled = () => {
+      setPwaInstalled(true)
+      setPwaPromptEvent(null)
+    }
+    window.addEventListener("beforeinstallprompt", handlePrompt)
+    window.addEventListener("appinstalled", handleInstalled)
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handlePrompt)
+      window.removeEventListener("appinstalled", handleInstalled)
+    }
+  }, [])
 
   React.useEffect(() => {
     if (!isAuthenticated) return
@@ -1517,6 +1559,40 @@ export default function App() {
   return (
     <div>
       {renderScreen()}
+      {!pwaDismissed && !pwaInstalled && isAuthenticated ? (
+        <div className="fixed bottom-24 left-0 right-0 z-40 flex justify-center px-4">
+          <div className="w-full max-w-[430px] rounded-2xl border border-border bg-card px-4 py-3 shadow-lg">
+            <Stack gap="sm">
+              <div className="text-sm font-semibold">ホーム画面に追加できます</div>
+              <div className="text-xs text-muted-foreground">
+                アプリのように素早く開けるようになります。
+              </div>
+              <Cluster gap="sm" justify="end">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setPwaDismissed(true)}
+                >
+                  あとで
+                </Button>
+                {pwaPromptEvent ? (
+                  <Button variant="secondary" size="sm" onClick={handlePwaInstall}>
+                    追加する
+                  </Button>
+                ) : (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setToastMessage("ブラウザの共有メニューから追加できます")}
+                  >
+                    追加方法
+                  </Button>
+                )}
+              </Cluster>
+            </Stack>
+          </div>
+        </div>
+      ) : null}
       {onboardingGuideActive && activeOnboardingGuide && isAuthenticated ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4 py-6">
           <Stack
