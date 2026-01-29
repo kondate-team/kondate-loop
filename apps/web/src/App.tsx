@@ -10,6 +10,7 @@ import { ShareModal } from "@/components/domain/ShareModal"
 import { ShareLinkModal } from "@/components/domain/ShareLinkModal"
 import { Button } from "@/components/ui/button"
 import { Stack, Cluster } from "@/components/primitives/Stack"
+import { H2, Body, Muted } from "@/components/primitives/Typography"
 import type { CategoryItem } from "@/components/domain/CategoryTabs"
 import {
   recipeCategories,
