@@ -971,6 +971,8 @@ export function RecipeAddScreen({
   const [sourceUrl, setSourceUrl] = React.useState("")
   const [tagsText, setTagsText] = React.useState("")
   const [coverImageUrl, setCoverImageUrl] = React.useState("")
+  const [importText, setImportText] = React.useState("")
+  const [importError, setImportError] = React.useState<string | null>(null)
 
   const parseIngredients = (value: string) => {
     return value
@@ -989,6 +991,54 @@ export function RecipeAddScreen({
         }
         return { name: line, amount: 1, unit: "個" }
       })
+  }
+
+  const buildImportPreview = (value: string) => {
+    const lines = value
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+    const urlLine = lines.find((line) => line.startsWith("http"))
+    const cleanedLines = lines.filter((line) => line !== urlLine)
+    const titleLine = cleanedLines[0] ?? "取り込みレシピ"
+    const ingredientsIndex = cleanedLines.findIndex((line) => line.includes("材料"))
+    const stepsIndex = cleanedLines.findIndex(
+      (line) => line.includes("作り方") || line.includes("手順")
+    )
+    const ingredientsLines =
+      ingredientsIndex >= 0
+        ? cleanedLines.slice(
+            ingredientsIndex + 1,
+            stepsIndex > ingredientsIndex ? stepsIndex : undefined
+          )
+        : cleanedLines.slice(1, stepsIndex > 1 ? stepsIndex : undefined)
+    const stepsLines =
+      stepsIndex >= 0 ? cleanedLines.slice(stepsIndex + 1) : cleanedLines.slice(2)
+
+    return {
+      title: titleLine,
+      ingredientsText: ingredientsLines.join("\n") || "材料 2人前",
+      stepsText: stepsLines.join("\n") || "作り方をここに入力してください",
+      sourceUrl: urlLine,
+    }
+  }
+
+  const handleImport = () => {
+    if (!importText.trim()) {
+      setImportError("取り込みたいURLまたはテキストを入力してください。")
+      return
+    }
+    setImportError(null)
+    const preview = buildImportPreview(importText)
+    setTitle(preview.title)
+    setIngredientsText(preview.ingredientsText)
+    setStepsText(preview.stepsText)
+    if (preview.sourceUrl) {
+      setSourceUrl(preview.sourceUrl)
+    }
+    if (preview.author) {
+      setAuthor(preview.author)
+    }
   }
 
   const handleSaveRecipe = () => {
@@ -1025,12 +1075,22 @@ export function RecipeAddScreen({
           <Surface tone="section" density="comfy" className="border-transparent">
             <Stack gap="sm">
               <H3 className="text-base">URLまたはテキストから取り込み</H3>
-                <textarea
-                  className="w-full rounded-2xl border border-border bg-card px-4 py-3 text-sm"
-                  rows={4}
-                  placeholder="レシピのURLやテキストを貼り付け"
-                />
-              <Button variant="secondary" size="sm" className="rounded-full">
+              <textarea
+                className="w-full rounded-2xl border border-border bg-card px-4 py-3 text-sm"
+                rows={4}
+                placeholder="レシピのURLやテキストを貼り付け"
+                value={importText}
+                onChange={(event) => setImportText(event.target.value)}
+              />
+              {importError ? (
+                <Muted className="text-xs text-destructive">{importError}</Muted>
+              ) : null}
+              <Button
+                variant="secondary"
+                size="sm"
+                className="rounded-full"
+                onClick={handleImport}
+              >
                 反映する
               </Button>
             </Stack>
