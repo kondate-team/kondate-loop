@@ -1492,9 +1492,9 @@ export function NotificationsScreen({
   onOpenNews,
   onboardingGuideActive,
   onboardingGuideStep,
-  onboardingHistorySeeded,
-  onAdvanceOnboarding,
-  onCompleteOnboarding,
+  onboardingNotificationSteps,
+  onCompleteOnboardingStep,
+  recipeSavedNoticeCount,
 }: SubScreenProps & {
   onOpenHome?: () => void
   onOpenHelp?: () => void
@@ -1503,9 +1503,9 @@ export function NotificationsScreen({
   onOpenNews?: (item: { title: string; message: string; sourceName?: string; createdAt: string }) => void
   onboardingGuideActive?: boolean
   onboardingGuideStep?: number
-  onboardingHistorySeeded?: boolean
-  onAdvanceOnboarding?: (nextStep: number) => void
-  onCompleteOnboarding?: () => void
+  onboardingNotificationSteps?: number[]
+  onCompleteOnboardingStep?: (step: number) => void
+  recipeSavedNoticeCount?: number
 }) {
   type NotificationItem = {
     id: string
@@ -1529,15 +1529,6 @@ export function NotificationsScreen({
       readAt: null as string | null,
     },
     {
-      id: "n2",
-      category: "personal",
-      title: "レシピ帳に保存されました",
-      message: "購入したレシピがレシピ帳に追加されました。",
-      sourceName: "",
-      createdAt: "2026-01-25T08:40:00.000Z",
-      readAt: null as string | null,
-    },
-    {
       id: "n3",
       category: "news",
       title: "料理家の新作レシピ公開",
@@ -1557,47 +1548,79 @@ export function NotificationsScreen({
     () => [
       {
         step: 1,
-        title: "まずはカテゴリを登録してみましょう",
-        message: "レシピ帳のカテゴリ管理から、自分の棚を作れます。",
-      },
-      {
-        step: 2,
-        title: "レシピ一覧を作ってみましょう",
-        message: "お気に入りのレシピを保存して、献立のベースに。",
-      },
-      {
-        step: 3,
         title: "献立を組んでみましょう",
         message: "今週のこんだてにセットを反映すると買い物が楽になります。",
       },
       {
+        step: 2,
+        title: "レシピを登録してみましょう",
+        message: "レシピカタログから気になるレシピを保存してみましょう。",
+      },
+      {
+        step: 3,
+        title: "レシピ一覧を作ってみましょう",
+        message: "お気に入りのレシピを保存して、献立のベースに。",
+      },
+      {
         step: 4,
-        title: "ホーム画面に追加しましょう",
-        message: "PWAとして追加すると、すぐ開けて便利です。",
+        title: "カテゴリを登録してみましょう",
+        message: "レシピ帳のカテゴリ管理から、自分の棚を作れます。",
       },
     ],
     []
   )
 
   React.useEffect(() => {
-    if (!onboardingHistorySeeded && !onboardingGuideActive) return
+    if (!onboardingNotificationSteps || onboardingNotificationSteps.length === 0) return
     setItems((prev) => {
-      const hasOnboarding = prev.some((item) => item.id.startsWith("onboard-"))
-      if (hasOnboarding) return prev
+      const existingSteps = new Set(
+        prev
+          .filter((item) => item.id.startsWith("onboard-") && item.onboardingStep)
+          .map((item) => item.onboardingStep as number)
+      )
       const now = new Date().toISOString()
-      const onboardingItems = onboardingGuides.map((guide) => ({
-        id: `onboard-${guide.step}`,
-        category: "personal",
-        title: guide.title,
-        message: guide.message,
-        sourceName: "",
-        createdAt: now,
-        readAt: null as string | null,
-        onboardingStep: guide.step,
-      }))
+      const onboardingItems = onboardingNotificationSteps
+        .filter((step) => !existingSteps.has(step))
+        .map((step) => {
+          const guide = onboardingGuides.find((item) => item.step === step)
+          if (!guide) return null
+          return {
+            id: `onboard-${guide.step}`,
+            category: "personal",
+            title: guide.title,
+            message: guide.message,
+            sourceName: "",
+            createdAt: now,
+            readAt: null as string | null,
+            onboardingStep: guide.step,
+          }
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null)
+      if (onboardingItems.length === 0) return prev
       return [...onboardingItems, ...prev]
     })
-  }, [onboardingGuideActive, onboardingGuides])
+  }, [onboardingNotificationSteps, onboardingGuides])
+
+  React.useEffect(() => {
+    if (!recipeSavedNoticeCount) return
+    setItems((prev) => {
+      const id = `saved-${recipeSavedNoticeCount}`
+      if (prev.some((item) => item.id === id)) return prev
+      const now = new Date().toISOString()
+      return [
+        {
+          id,
+          category: "personal",
+          title: "レシピ帳に保存されました",
+          message: "保存したレシピがレシピ帳に追加されました。",
+          sourceName: "",
+          createdAt: now,
+          readAt: null as string | null,
+        },
+        ...prev,
+      ]
+    })
+  }, [recipeSavedNoticeCount])
 
   const filteredItems = items
     .filter((item) => item.category === tab)
@@ -1643,15 +1666,9 @@ export function NotificationsScreen({
 
   const activeGuide = onboardingGuides.find((guide) => guide.step === activeGuideStep)
   const handleGuideAdvance = () => {
-    if (!activeGuideStep) return
-    const nextStep = activeGuideStep + 1
+    if (!activeGuide) return
+    onCompleteOnboardingStep?.(activeGuide.step)
     setActiveGuideStep(null)
-    if (nextStep > onboardingGuides.length) {
-      onCompleteOnboarding?.()
-      onAdvanceOnboarding?.(0)
-      return
-    }
-    onAdvanceOnboarding?.(nextStep)
   }
 
   return (
@@ -1832,7 +1849,7 @@ export function NotificationsScreen({
                     後で見る
                   </Button>
                   <Button variant="secondary" size="sm" onClick={handleGuideAdvance}>
-                    {activeGuide.step >= onboardingGuides.length ? "完了" : "次へ"}
+                    完了
                   </Button>
                 </Cluster>
               </Stack>
