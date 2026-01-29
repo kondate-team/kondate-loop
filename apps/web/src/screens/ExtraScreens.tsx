@@ -1561,6 +1561,11 @@ export function NotificationsScreen({
   onOpenNews,
   pwaGuideAvailable,
   onOpenPwaGuide,
+  onboardingGuideActive,
+  onboardingGuideStep,
+  onboardingNotificationSteps,
+  onCompleteOnboardingStep,
+  recipeSavedNoticeCount,
 }: SubScreenProps & {
   onOpenHome?: () => void
   onOpenHelp?: () => void
@@ -1569,6 +1574,11 @@ export function NotificationsScreen({
   onOpenNews?: (item: { title: string; message: string; sourceName?: string; createdAt: string }) => void
   pwaGuideAvailable?: boolean
   onOpenPwaGuide?: () => void
+  onboardingGuideActive?: boolean
+  onboardingGuideStep?: number
+  onboardingNotificationSteps?: number[]
+  onCompleteOnboardingStep?: (step: number) => void
+  recipeSavedNoticeCount?: number
 }) {
   type NotificationItem = {
     id: string
@@ -1579,6 +1589,7 @@ export function NotificationsScreen({
     createdAt: string
     readAt: string | null
     kind?: "pwa-guide"
+    onboardingStep?: number
   }
   const [tab, setTab] = React.useState<"news" | "personal">("news")
   const [items, setItems] = React.useState<NotificationItem[]>(() => [
@@ -1589,15 +1600,6 @@ export function NotificationsScreen({
       message: "季節の献立をまとめた新しいセットを追加しました。",
       sourceName: "献立ループ事務局",
       createdAt: "2026-01-25T10:00:00.000Z",
-      readAt: null as string | null,
-    },
-    {
-      id: "n2",
-      category: "personal",
-      title: "レシピ帳に保存されました",
-      message: "購入したレシピがレシピ帳に追加されました。",
-      sourceName: "",
-      createdAt: "2026-01-25T08:40:00.000Z",
       readAt: null as string | null,
     },
     {
@@ -1614,6 +1616,85 @@ export function NotificationsScreen({
     title: string
     message: string
   } | null>(null)
+  const [activeGuideStep, setActiveGuideStep] = React.useState<number | null>(null)
+
+  const onboardingGuides = React.useMemo(
+    () => [
+      {
+        step: 1,
+        title: "献立を組んでみましょう",
+        message: "今週のこんだてにセットを反映すると買い物が楽になります。",
+      },
+      {
+        step: 2,
+        title: "レシピを登録してみましょう",
+        message: "レシピカタログから気になるレシピを保存してみましょう。",
+      },
+      {
+        step: 3,
+        title: "レシピ一覧を作ってみましょう",
+        message: "お気に入りのレシピを保存して、献立のベースに。",
+      },
+      {
+        step: 4,
+        title: "カテゴリを登録してみましょう",
+        message: "レシピ帳のカテゴリ管理から、自分の棚を作れます。",
+      },
+    ],
+    []
+  )
+
+  React.useEffect(() => {
+    if (!onboardingNotificationSteps || onboardingNotificationSteps.length === 0) return
+    setItems((prev) => {
+      const existingSteps = new Set(
+        prev
+          .filter((item) => item.id.startsWith("onboard-") && item.onboardingStep)
+          .map((item) => item.onboardingStep as number)
+      )
+      const now = new Date().toISOString()
+      const onboardingItems = onboardingNotificationSteps
+        .filter((step) => !existingSteps.has(step))
+        .map((step) => {
+          const guide = onboardingGuides.find((item) => item.step === step)
+          if (!guide) return null
+          return {
+            id: `onboard-${guide.step}`,
+            category: "personal",
+            title: guide.title,
+            message: guide.message,
+            sourceName: "",
+            createdAt: now,
+            readAt: null as string | null,
+            onboardingStep: guide.step,
+          } as NotificationItem
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null)
+      if (onboardingItems.length === 0) return prev
+      return [...onboardingItems, ...prev]
+    })
+  }, [onboardingNotificationSteps, onboardingGuides])
+
+  React.useEffect(() => {
+    if (!recipeSavedNoticeCount) return
+    setItems((prev) => {
+      const id = `saved-${recipeSavedNoticeCount}`
+      if (prev.some((item) => item.id === id)) return prev
+      const now = new Date().toISOString()
+      return [
+        {
+          id,
+          category: "personal",
+          title: "レシピ帳に保存されました",
+          message: "保存したレシピがレシピ帳に追加されました。",
+          sourceName: "",
+          createdAt: now,
+          readAt: null as string | null,
+        },
+        ...prev,
+      ]
+    })
+  }, [recipeSavedNoticeCount])
 
   React.useEffect(() => {
     if (!pwaGuideAvailable) return
@@ -1657,6 +1738,10 @@ export function NotificationsScreen({
       onOpenPwaGuide?.()
       return
     }
+    if (item.onboardingStep) {
+      setActiveGuideStep(item.onboardingStep)
+      return
+    }
     if (item.category === "news") {
       onOpenNews?.({
         title: item.title,
@@ -1673,6 +1758,13 @@ export function NotificationsScreen({
     const date = new Date(value)
     if (Number.isNaN(date.getTime())) return ""
     return `${date.getMonth() + 1}/${date.getDate()}`
+  }
+
+  const activeGuide = onboardingGuides.find((guide) => guide.step === activeGuideStep)
+  const handleGuideAdvance = () => {
+    if (!activeGuide) return
+    onCompleteOnboardingStep?.(activeGuide.step)
+    setActiveGuideStep(null)
   }
 
   return (
@@ -1753,33 +1845,46 @@ export function NotificationsScreen({
             />
           ) : (
             <Stack gap="sm">
-              {filteredItems.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => openNotification(item)}
-                  className={cn(
-                    "w-full rounded-2xl border border-border bg-card px-4 py-3 text-left",
-                    item.readAt ? "opacity-80" : "shadow-[0_0_0_1px_rgba(0,0,0,0.04)]"
-                  )}
-                >
-                  <Stack gap="xs">
-                    <Cluster justify="between" align="center">
-                      <Body className="text-sm font-semibold">{item.title}</Body>
-                      {!item.readAt ? (
-                        <span className="h-2 w-2 rounded-full bg-primary" />
+              {filteredItems.map((item) => {
+                const isNextGuide =
+                  onboardingGuideActive &&
+                  typeof item.onboardingStep === "number" &&
+                  item.onboardingStep === onboardingGuideStep
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => openNotification(item)}
+                    className={cn(
+                      "w-full rounded-2xl border border-border bg-card px-4 py-3 text-left",
+                      item.readAt ? "opacity-80" : "shadow-[0_0_0_1px_rgba(0,0,0,0.04)]"
+                    )}
+                  >
+                    <Stack gap="xs">
+                      <Cluster justify="between" align="center">
+                        <Cluster gap="xs" align="center">
+                          <Body className="text-sm font-semibold">{item.title}</Body>
+                          {isNextGuide ? (
+                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-900">
+                              次のガイド
+                            </span>
+                          ) : null}
+                        </Cluster>
+                        {!item.readAt ? (
+                          <span className="h-2 w-2 rounded-full bg-primary" />
+                        ) : null}
+                      </Cluster>
+                      {item.category === "news" ? (
+                        <Muted className="text-xs">
+                          {item.sourceName || "献立ループ事務局"}
+                        </Muted>
                       ) : null}
-                    </Cluster>
-                    {item.category === "news" ? (
-                      <Muted className="text-xs">
-                        {item.sourceName || "献立ループ事務局"}
-                      </Muted>
-                    ) : null}
-                    <Muted className="text-xs">{item.message}</Muted>
-                    <Muted className="text-xs">{formatSimpleDate(item.createdAt)}</Muted>
-                  </Stack>
-                </button>
-              ))}
+                      <Muted className="text-xs">{item.message}</Muted>
+                      <Muted className="text-xs">{formatSimpleDate(item.createdAt)}</Muted>
+                    </Stack>
+                  </button>
+                )
+              })}
             </Stack>
           )}
         </Stack>
@@ -1808,6 +1913,41 @@ export function NotificationsScreen({
                 <Body className="text-sm text-muted-foreground">
                   {activeNotification.message}
                 </Body>
+              </Stack>
+            </div>
+          </Surface>
+        </div>
+      ) : null}
+      {activeGuide ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4 py-6">
+          <Surface
+            tone="card"
+            density="none"
+            elevation="raised"
+            className="w-full max-w-sm overflow-hidden"
+          >
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <H2 className="text-lg">ガイド {activeGuide.step}/4</H2>
+              <button
+                type="button"
+                onClick={() => setActiveGuideStep(null)}
+                className="rounded-full border border-border px-3 py-1 text-xs"
+              >
+                閉じる
+              </button>
+            </div>
+            <div className="px-5 py-5">
+              <Stack gap="sm">
+                <H3 className="text-base">{activeGuide.title}</H3>
+                <Body className="text-sm text-muted-foreground">{activeGuide.message}</Body>
+                <Cluster gap="sm" justify="end">
+                  <Button variant="ghost" size="sm" onClick={() => setActiveGuideStep(null)}>
+                    後で見る
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={handleGuideAdvance}>
+                    完了
+                  </Button>
+                </Cluster>
               </Stack>
             </div>
           </Surface>

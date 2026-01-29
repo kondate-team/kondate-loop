@@ -10,7 +10,7 @@ import { ShareModal } from "@/components/domain/ShareModal"
 import { ShareLinkModal } from "@/components/domain/ShareLinkModal"
 import { Button } from "@/components/ui/button"
 import { Stack, Cluster } from "@/components/primitives/Stack"
-import { H2, Muted } from "@/components/primitives/Typography"
+import { Body, H2, H3, Muted } from "@/components/primitives/Typography"
 import type { CategoryItem } from "@/components/domain/CategoryTabs"
 import {
   recipeCategories,
@@ -232,6 +232,18 @@ export default function App() {
   const [deletedFridgeItems, setDeletedFridgeItems] = React.useState<
     { id: string; name: string; amount: number; unit: string; deletedAt: string }[]
   >([])
+  const [onboardingGuideActive, setOnboardingGuideActive] = React.useState(false)
+  const [onboardingGuideStep, setOnboardingGuideStep] = React.useState(0)
+  const [onboardingUnlockedSteps, setOnboardingUnlockedSteps] = React.useState<number[]>([])
+  const [onboardingCompletedSteps, setOnboardingCompletedSteps] = React.useState<number[]>([])
+  const [onboardingSnoozedStep, setOnboardingSnoozedStep] = React.useState<number | null>(
+    null
+  )
+  const [onboardingSnoozedScreen, setOnboardingSnoozedScreen] = React.useState<ScreenKey | null>(
+    null
+  )
+  const [recipeSavedNoticeCount, setRecipeSavedNoticeCount] = React.useState(0)
+  const [catalogSavedOnce, setCatalogSavedOnce] = React.useState(false)
   const categoryThemePalette = React.useMemo(
     () =>
       recipeCategories
@@ -319,8 +331,13 @@ export default function App() {
   const completeLogin = (firstTime?: boolean) => {
     setIsAuthenticated(true)
     if (firstTime) {
-      setHasOnboarded(false)
-      navigate("onboarding", true)
+      setOnboardingGuideActive(false)
+      setOnboardingGuideStep(0)
+      setOnboardingUnlockedSteps([])
+      setOnboardingCompletedSteps([])
+      setCatalogSavedOnce(false)
+      setRecipeSavedNoticeCount(0)
+      navigate("kondate", true)
       return
     }
     navigate(hasOnboarded ? "kondate" : "onboarding", true)
@@ -370,6 +387,39 @@ export default function App() {
     setPwaGuideOpen(true)
   }
 
+  const unlockOnboardingStep = React.useCallback((step: number, activate = false) => {
+    setOnboardingUnlockedSteps((prev) => (prev.includes(step) ? prev : [...prev, step]))
+    if (activate) {
+      setOnboardingGuideStep(step)
+      setOnboardingGuideActive(true)
+    }
+  }, [])
+  const completeOnboardingStep = React.useCallback(
+    (step: number) => {
+      setOnboardingCompletedSteps((prev) => (prev.includes(step) ? prev : [...prev, step]))
+      if (onboardingSnoozedStep === step) {
+        setOnboardingSnoozedStep(null)
+        setOnboardingSnoozedScreen(null)
+      }
+      if (onboardingGuideStep === step) {
+        setOnboardingGuideActive(false)
+        setOnboardingGuideStep(0)
+      }
+    },
+    [onboardingGuideStep, onboardingSnoozedStep]
+  )
+  const closeOnboardingGuide = () => {
+    if (activeOnboardingGuide) {
+      setOnboardingSnoozedStep(activeOnboardingGuide.step)
+      setOnboardingSnoozedScreen(screen)
+    }
+    setOnboardingGuideActive(false)
+  }
+  const completeOnboardingGuide = () => {
+    if (!activeOnboardingGuide) return
+    completeOnboardingStep(activeOnboardingGuide.step)
+  }
+
   React.useEffect(() => {
     if (!toastMessage) return
     const timer = window.setTimeout(() => setToastMessage(null), 2200)
@@ -383,7 +433,7 @@ export default function App() {
       setPwaGuideHidden(true)
       setPwaDismissed(true)
     }
-  }, [])
+  }, [setPwaDismissed, setPwaGuideHidden])
 
   React.useEffect(() => {
     if (typeof window === "undefined") return
@@ -407,8 +457,56 @@ export default function App() {
       window.removeEventListener("beforeinstallprompt", handlePrompt)
       window.removeEventListener("appinstalled", handleInstalled)
     }
-  }, [])
+  }, [setPwaInstalled, setPwaPromptEvent])
 
+  React.useEffect(() => {
+    if (!isAuthenticated) return
+    if (onboardingGuideActive) return
+    const isCompleted = (step: number) => onboardingCompletedSteps.includes(step)
+    const isSnoozed =
+      onboardingSnoozedStep !== null && onboardingSnoozedScreen === screen
+    if (screen === "kondate") {
+      if (!isCompleted(1) && !(isSnoozed && onboardingSnoozedStep === 1)) {
+        unlockOnboardingStep(1, true)
+      }
+      return
+    }
+    if (screen === "catalog") {
+      if (!isCompleted(2) && !(isSnoozed && onboardingSnoozedStep === 2)) {
+        unlockOnboardingStep(2, true)
+      }
+      return
+    }
+    if (screen === "book") {
+      if (!isCompleted(3) && !(isSnoozed && onboardingSnoozedStep === 3)) {
+        unlockOnboardingStep(3, true)
+        return
+      }
+      if (
+        catalogSavedOnce &&
+        !isCompleted(4) &&
+        !(isSnoozed && onboardingSnoozedStep === 4)
+      ) {
+        unlockOnboardingStep(4, true)
+      }
+    }
+  }, [
+    screen,
+    isAuthenticated,
+    onboardingGuideActive,
+    onboardingCompletedSteps,
+    catalogSavedOnce,
+    onboardingSnoozedStep,
+    onboardingSnoozedScreen,
+    unlockOnboardingStep,
+  ])
+
+  React.useEffect(() => {
+    if (!onboardingSnoozedScreen) return
+    if (onboardingSnoozedScreen === screen) return
+    setOnboardingSnoozedScreen(null)
+    setOnboardingSnoozedStep(null)
+  }, [screen, onboardingSnoozedScreen])
   const goBack = React.useCallback(() => {
     setHistory((prev) => {
       if (prev.length <= 1) return prev
@@ -526,6 +624,34 @@ export default function App() {
     shareTarget?.type === "set" ? mySets.find((item) => item.id === shareTarget.id) : null
   const shareLinkTitle = shareLink?.title ?? ""
   const shareLinkTypeLabel = shareLink?.type === "set" ? "レシピセット" : "レシピ"
+  const onboardingGuides = React.useMemo(
+    () => [
+      {
+        step: 1,
+        title: "献立を組んでみましょう",
+        message: "今週のこんだてにセットを反映すると買い物が楽になります。",
+      },
+      {
+        step: 2,
+        title: "レシピを登録してみましょう",
+        message: "レシピカタログから気になるレシピを保存してみましょう。",
+      },
+      {
+        step: 3,
+        title: "レシピ一覧を作ってみましょう",
+        message: "お気に入りのレシピを保存して、献立のベースに。",
+      },
+      {
+        step: 4,
+        title: "カテゴリを登録してみましょう",
+        message: "レシピ帳のカテゴリ管理から、自分の棚を作れます。",
+      },
+    ],
+    []
+  )
+  const activeOnboardingGuide = onboardingGuides.find(
+    (guide) => guide.step === onboardingGuideStep
+  )
   const shareRecipeView =
     shareView?.type === "recipe"
       ? recipePool.find((item) => item.id === shareView.id) ?? recipeDetailMock
@@ -560,6 +686,8 @@ export default function App() {
       return
     }
     setMyRecipes((prev) => [...prev, { ...recipe, source: "catalog" }])
+    setCatalogSavedOnce(true)
+    setRecipeSavedNoticeCount((prev) => prev + 1)
     setToastMessage("レシピ帳に保存しました")
   }
 
@@ -1412,6 +1540,11 @@ export default function App() {
             onOpenFridge={() => setFridgeOpen(true)}
             pwaGuideAvailable={isAuthenticated}
             onOpenPwaGuide={openPwaGuide}
+            onboardingGuideActive={onboardingGuideActive}
+            onboardingGuideStep={onboardingGuideStep}
+            onboardingNotificationSteps={onboardingUnlockedSteps}
+            onCompleteOnboardingStep={completeOnboardingStep}
+            recipeSavedNoticeCount={recipeSavedNoticeCount}
             onOpenNews={(item) => {
               setActiveNews(item)
               navigate("news-detail")
@@ -1466,6 +1599,29 @@ export default function App() {
               </Cluster>
             </Stack>
           </div>
+        </div>
+      ) : null}
+      {onboardingGuideActive && activeOnboardingGuide && isAuthenticated ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4 py-6">
+          <Stack
+            className="w-full max-w-sm overflow-hidden rounded-2xl border border-border bg-card px-5 py-5"
+            gap="sm"
+          >
+            <Muted className="text-xs">はじめてのこんだてLoop</Muted>
+            <H2 className="text-lg">
+              {activeOnboardingGuide.step}/{onboardingGuides.length}
+            </H2>
+            <H3 className="text-base">{activeOnboardingGuide.title}</H3>
+            <Body className="text-sm text-muted-foreground">{activeOnboardingGuide.message}</Body>
+            <Cluster gap="sm" justify="end">
+              <Button variant="ghost" size="sm" onClick={closeOnboardingGuide}>
+                後で見る
+              </Button>
+              <Button variant="secondary" size="sm" onClick={completeOnboardingGuide}>
+                完了
+              </Button>
+            </Cluster>
+          </Stack>
         </div>
       ) : null}
       {isAuthenticated && rootScreens.includes(screen) ? (
