@@ -214,14 +214,16 @@ export default function App() {
     title: string
     type: "recipe" | "set"
   } | null>(null)
+  const [pwaPromptEvent, setPwaPromptEvent] = React.useState<BeforeInstallPromptEvent | null>(null)
+  const [pwaDismissed, setPwaDismissed] = React.useState(false)
+  const [pwaInstalled, setPwaInstalled] = React.useState(false)
+  const [pwaGuideOpen, setPwaGuideOpen] = React.useState(false)
+  const [pwaGuideHidden, setPwaGuideHidden] = React.useState(false)
   const [shareView, setShareView] = React.useState<{
     type: "recipe" | "set"
     id: string
   } | null>(() => getShareViewFromPath())
   const [completionOpen, setCompletionOpen] = React.useState(false)
-  const [pwaPromptEvent, setPwaPromptEvent] = React.useState<BeforeInstallPromptEvent | null>(null)
-  const [pwaDismissed, setPwaDismissed] = React.useState(false)
-  const [pwaInstalled, setPwaInstalled] = React.useState(false)
   const [currentSet, setCurrentSet] = React.useState<AnySet | null>(() => mockSets[0] ?? null)
   const [nextSet, setNextSet] = React.useState<AnySet | null>(() => mockSets[1] ?? null)
   const [selectingFor, setSelectingFor] = React.useState<"current" | "next">("current")
@@ -381,6 +383,10 @@ export default function App() {
     }
   }
 
+  const openPwaGuide = () => {
+    setPwaGuideOpen(true)
+  }
+
   const unlockOnboardingStep = React.useCallback((step: number, activate = false) => {
     setOnboardingUnlockedSteps((prev) => (prev.includes(step) ? prev : [...prev, step]))
     if (activate) {
@@ -422,6 +428,15 @@ export default function App() {
 
   React.useEffect(() => {
     if (typeof window === "undefined") return
+    const hidden = window.localStorage.getItem("kondate-pwa-guide-hidden")
+    if (hidden === "true") {
+      setPwaGuideHidden(true)
+      setPwaDismissed(true)
+    }
+  }, [setPwaDismissed, setPwaGuideHidden])
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return
     const isStandalone =
       window.matchMedia?.("(display-mode: standalone)").matches ||
       (navigator as Navigator & { standalone?: boolean }).standalone
@@ -442,7 +457,7 @@ export default function App() {
       window.removeEventListener("beforeinstallprompt", handlePrompt)
       window.removeEventListener("appinstalled", handleInstalled)
     }
-  }, [])
+  }, [setPwaInstalled, setPwaPromptEvent])
 
   React.useEffect(() => {
     if (!isAuthenticated) return
@@ -492,7 +507,6 @@ export default function App() {
     setOnboardingSnoozedScreen(null)
     setOnboardingSnoozedStep(null)
   }, [screen, onboardingSnoozedScreen])
-
   const goBack = React.useCallback(() => {
     setHistory((prev) => {
       if (prev.length <= 1) return prev
@@ -1524,6 +1538,8 @@ export default function App() {
             onOpenHelp={() => navigate("onboarding")}
             onOpenNotifications={() => navigate("notifications")}
             onOpenFridge={() => setFridgeOpen(true)}
+            pwaGuideAvailable={isAuthenticated}
+            onOpenPwaGuide={openPwaGuide}
             onboardingGuideActive={onboardingGuideActive}
             onboardingGuideStep={onboardingGuideStep}
             onboardingNotificationSteps={onboardingUnlockedSteps}
@@ -1568,11 +1584,7 @@ export default function App() {
                 アプリのように素早く開けるようになります。
               </div>
               <Cluster gap="sm" justify="end">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setPwaDismissed(true)}
-                >
+                <Button variant="ghost" size="sm" onClick={() => setPwaDismissed(true)}>
                   あとで
                 </Button>
                 {pwaPromptEvent ? (
@@ -1580,11 +1592,7 @@ export default function App() {
                     追加する
                   </Button>
                 ) : (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setToastMessage("ブラウザの共有メニューから追加できます")}
-                  >
+                  <Button variant="secondary" size="sm" onClick={openPwaGuide}>
                     追加方法
                   </Button>
                 )}
@@ -1805,6 +1813,54 @@ export default function App() {
             <Button className="mt-5 w-full rounded-full" onClick={completeCurrentSet}>
               閉じる
             </Button>
+          </div>
+        </div>
+      ) : null}
+      {pwaGuideOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6">
+          <div className="w-full max-w-sm overflow-hidden rounded-3xl bg-card px-5 py-5 text-left shadow-xl">
+            <div className="text-center">
+              <H2 className="text-lg">ホーム画面に追加しよう</H2>
+              <Muted className="mt-1 text-xs">
+                追加するとすぐに開けて便利になります
+              </Muted>
+            </div>
+            <div className="mt-4 space-y-3 text-sm">
+              <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-3">
+                <div className="text-xs font-semibold text-muted-foreground">STEP 1</div>
+                <div className="mt-1">URL欄の共有ボタンをタップ</div>
+              </div>
+              <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-3">
+                <div className="text-xs font-semibold text-muted-foreground">STEP 2</div>
+                <div className="mt-1">「ホーム画面に追加」をタップ</div>
+              </div>
+              <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-3">
+                <div className="text-xs font-semibold text-muted-foreground">STEP 3</div>
+                <div className="mt-1">ホーム画面のアイコンから起動</div>
+              </div>
+            </div>
+            <div className="mt-4 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !pwaGuideHidden
+                  setPwaGuideHidden(next)
+                  window.localStorage.setItem("kondate-pwa-guide-hidden", String(next))
+                  if (next) setPwaDismissed(true)
+                }}
+                className="flex items-center gap-2 text-xs text-muted-foreground"
+              >
+                <span
+                  className={`h-4 w-4 rounded border ${
+                    pwaGuideHidden ? "bg-primary border-primary" : "border-border"
+                  }`}
+                />
+                今後表示しない
+              </button>
+              <Button variant="secondary" size="sm" onClick={() => setPwaGuideOpen(false)}>
+                閉じる
+              </Button>
+            </div>
           </div>
         </div>
       ) : null}

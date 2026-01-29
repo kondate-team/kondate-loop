@@ -1559,6 +1559,8 @@ export function NotificationsScreen({
   onOpenNotifications,
   onOpenFridge,
   onOpenNews,
+  pwaGuideAvailable,
+  onOpenPwaGuide,
   onboardingGuideActive,
   onboardingGuideStep,
   onboardingNotificationSteps,
@@ -1570,6 +1572,8 @@ export function NotificationsScreen({
   onOpenNotifications?: () => void
   onOpenFridge?: () => void
   onOpenNews?: (item: { title: string; message: string; sourceName?: string; createdAt: string }) => void
+  pwaGuideAvailable?: boolean
+  onOpenPwaGuide?: () => void
   onboardingGuideActive?: boolean
   onboardingGuideStep?: number
   onboardingNotificationSteps?: number[]
@@ -1584,6 +1588,7 @@ export function NotificationsScreen({
     sourceName?: string
     createdAt: string
     readAt: string | null
+    kind?: "pwa-guide"
     onboardingStep?: number
   }
   const [tab, setTab] = React.useState<"news" | "personal">("news")
@@ -1691,6 +1696,24 @@ export function NotificationsScreen({
     })
   }, [recipeSavedNoticeCount])
 
+  React.useEffect(() => {
+    if (!pwaGuideAvailable) return
+    setItems((prev) => {
+      if (prev.some((item) => item.id === "pwa-guide")) return prev
+      const now = new Date().toISOString()
+      const guideItem: NotificationItem = {
+        id: "pwa-guide",
+        category: "personal",
+        title: "ホーム画面に追加する方法",
+        message: "追加手順を確認して、すぐに開けるようにしましょう。",
+        createdAt: now,
+        readAt: null,
+        kind: "pwa-guide",
+      }
+      return [guideItem, ...prev]
+    })
+  }, [pwaGuideAvailable])
+
   const filteredItems = items
     .filter((item) => item.category === tab)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
@@ -1711,7 +1734,11 @@ export function NotificationsScreen({
           : entry
       )
     )
-    if ("onboardingStep" in item && item.onboardingStep) {
+    if (item.kind === "pwa-guide") {
+      onOpenPwaGuide?.()
+      return
+    }
+    if (item.onboardingStep) {
       setActiveGuideStep(item.onboardingStep)
       return
     }
