@@ -119,6 +119,17 @@ export function RecipeDetailModal({
                 {lockedMessage ? (
                   <Body className="text-sm text-muted-foreground">{lockedMessage}</Body>
                 ) : null}
+                <div className="relative overflow-hidden rounded-xl border border-border bg-muted/20 px-4 py-3">
+                  <div className="space-y-2 blur-[2px]">
+                    <div className="h-3 w-4/5 rounded-full bg-muted/70" />
+                    <div className="h-3 w-3/5 rounded-full bg-muted/70" />
+                    <div className="h-3 w-2/3 rounded-full bg-muted/70" />
+                    <div className="h-3 w-1/2 rounded-full bg-muted/70" />
+                  </div>
+                  <div className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-muted-foreground">
+                    購入すると続きを確認できます
+                  </div>
+                </div>
                 {lockedActions ? lockedActions : null}
               </Stack>
             ) : (
