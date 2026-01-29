@@ -234,7 +234,16 @@ export default function App() {
   >([])
   const [onboardingGuideActive, setOnboardingGuideActive] = React.useState(false)
   const [onboardingGuideStep, setOnboardingGuideStep] = React.useState(0)
-  const [onboardingHistorySeeded, setOnboardingHistorySeeded] = React.useState(false)
+  const [onboardingUnlockedSteps, setOnboardingUnlockedSteps] = React.useState<number[]>([])
+  const [onboardingCompletedSteps, setOnboardingCompletedSteps] = React.useState<number[]>([])
+  const [onboardingSnoozedStep, setOnboardingSnoozedStep] = React.useState<number | null>(
+    null
+  )
+  const [onboardingSnoozedScreen, setOnboardingSnoozedScreen] = React.useState<ScreenKey | null>(
+    null
+  )
+  const [recipeSavedNoticeCount, setRecipeSavedNoticeCount] = React.useState(0)
+  const [catalogSavedOnce, setCatalogSavedOnce] = React.useState(false)
   const categoryThemePalette = React.useMemo(
     () =>
       recipeCategories
@@ -322,9 +331,12 @@ export default function App() {
   const completeLogin = (firstTime?: boolean) => {
     setIsAuthenticated(true)
     if (firstTime) {
-      setOnboardingGuideActive(true)
-      setOnboardingGuideStep(1)
-      setOnboardingHistorySeeded(true)
+      setOnboardingGuideActive(false)
+      setOnboardingGuideStep(0)
+      setOnboardingUnlockedSteps([])
+      setOnboardingCompletedSteps([])
+      setCatalogSavedOnce(false)
+      setRecipeSavedNoticeCount(0)
       navigate("kondate", true)
       return
     }
@@ -371,17 +383,37 @@ export default function App() {
     }
   }
 
-  const closeOnboardingGuide = () => setOnboardingGuideActive(false)
-  const advanceOnboardingGuide = () => {
-    if (!activeOnboardingGuide) return
-    const nextStep = activeOnboardingGuide.step + 1
-    if (nextStep > onboardingGuides.length) {
-      setOnboardingGuideActive(false)
-      setOnboardingGuideStep(0)
-      setHasOnboarded(true)
-      return
+  const unlockOnboardingStep = React.useCallback((step: number, activate = false) => {
+    setOnboardingUnlockedSteps((prev) => (prev.includes(step) ? prev : [...prev, step]))
+    if (activate) {
+      setOnboardingGuideStep(step)
+      setOnboardingGuideActive(true)
     }
-    setOnboardingGuideStep(nextStep)
+  }, [])
+  const completeOnboardingStep = React.useCallback(
+    (step: number) => {
+      setOnboardingCompletedSteps((prev) => (prev.includes(step) ? prev : [...prev, step]))
+      if (onboardingSnoozedStep === step) {
+        setOnboardingSnoozedStep(null)
+        setOnboardingSnoozedScreen(null)
+      }
+      if (onboardingGuideStep === step) {
+        setOnboardingGuideActive(false)
+        setOnboardingGuideStep(0)
+      }
+    },
+    [onboardingGuideStep, onboardingSnoozedStep]
+  )
+  const closeOnboardingGuide = () => {
+    if (activeOnboardingGuide) {
+      setOnboardingSnoozedStep(activeOnboardingGuide.step)
+      setOnboardingSnoozedScreen(screen)
+    }
+    setOnboardingGuideActive(false)
+  }
+  const completeOnboardingGuide = () => {
+    if (!activeOnboardingGuide) return
+    completeOnboardingStep(activeOnboardingGuide.step)
   }
   const openPwaGuide = () => {
     setPwaGuideOpen(true)
@@ -425,6 +457,54 @@ export default function App() {
       window.removeEventListener("appinstalled", handleInstalled)
     }
   }, [])
+  React.useEffect(() => {
+    if (!isAuthenticated) return
+    if (onboardingGuideActive) return
+    const isCompleted = (step: number) => onboardingCompletedSteps.includes(step)
+    const isSnoozed =
+      onboardingSnoozedStep !== null && onboardingSnoozedScreen === screen
+    if (screen === "kondate") {
+      if (!isCompleted(1) && !(isSnoozed && onboardingSnoozedStep === 1)) {
+        unlockOnboardingStep(1, true)
+      }
+      return
+    }
+    if (screen === "catalog") {
+      if (!isCompleted(2) && !(isSnoozed && onboardingSnoozedStep === 2)) {
+        unlockOnboardingStep(2, true)
+      }
+      return
+    }
+    if (screen === "book") {
+      if (!isCompleted(3) && !(isSnoozed && onboardingSnoozedStep === 3)) {
+        unlockOnboardingStep(3, true)
+        return
+      }
+      if (
+        catalogSavedOnce &&
+        !isCompleted(4) &&
+        !(isSnoozed && onboardingSnoozedStep === 4)
+      ) {
+        unlockOnboardingStep(4, true)
+      }
+    }
+  }, [
+    screen,
+    isAuthenticated,
+    onboardingGuideActive,
+    onboardingCompletedSteps,
+    catalogSavedOnce,
+    onboardingSnoozedStep,
+    onboardingSnoozedScreen,
+    unlockOnboardingStep,
+  ])
+
+  React.useEffect(() => {
+    if (!onboardingSnoozedScreen) return
+    if (onboardingSnoozedScreen === screen) return
+    setOnboardingSnoozedScreen(null)
+    setOnboardingSnoozedStep(null)
+  }, [screen, onboardingSnoozedScreen])
 
   const goBack = React.useCallback(() => {
     setHistory((prev) => {
@@ -557,23 +637,23 @@ export default function App() {
     () => [
       {
         step: 1,
-        title: "まずはカテゴリを登録してみましょう",
-        message: "レシピ帳のカテゴリ管理から、自分の棚を作れます。",
-      },
-      {
-        step: 2,
-        title: "レシピ一覧を作ってみましょう",
-        message: "お気に入りのレシピを保存して、献立のベースに。",
-      },
-      {
-        step: 3,
         title: "献立を組んでみましょう",
         message: "今週のこんだてにセットを反映すると買い物が楽になります。",
       },
       {
+        step: 2,
+        title: "レシピを登録してみましょう",
+        message: "レシピカタログから気になるレシピを保存してみましょう。",
+      },
+      {
+        step: 3,
+        title: "レシピ一覧を作ってみましょう",
+        message: "お気に入りのレシピを保存して、献立のベースに。",
+      },
+      {
         step: 4,
-        title: "ホーム画面に追加しましょう",
-        message: "PWAとして追加すると、すぐ開けて便利です。",
+        title: "カテゴリを登録してみましょう",
+        message: "レシピ帳のカテゴリ管理から、自分の棚を作れます。",
       },
     ],
     []
@@ -605,6 +685,8 @@ export default function App() {
       return
     }
     setMyRecipes((prev) => [...prev, { ...recipe, source: "catalog" }])
+    setCatalogSavedOnce(true)
+    setRecipeSavedNoticeCount((prev) => prev + 1)
     setToastMessage("レシピ帳に保存しました")
   }
 
@@ -1457,9 +1539,9 @@ export default function App() {
             onOpenFridge={() => setFridgeOpen(true)}
             onboardingGuideActive={onboardingGuideActive}
             onboardingGuideStep={onboardingGuideStep}
-            onboardingHistorySeeded={onboardingHistorySeeded}
-            onAdvanceOnboarding={(nextStep) => setOnboardingGuideStep(nextStep)}
-            onCompleteOnboarding={() => setOnboardingGuideActive(false)}
+            onboardingNotificationSteps={onboardingUnlockedSteps}
+            onCompleteOnboardingStep={completeOnboardingStep}
+            recipeSavedNoticeCount={recipeSavedNoticeCount}
             pwaGuideAvailable={isAuthenticated}
             onOpenPwaGuide={openPwaGuide}
             onOpenNews={(item) => {
@@ -1508,8 +1590,8 @@ export default function App() {
               <Button variant="ghost" size="sm" onClick={closeOnboardingGuide}>
                 後で見る
               </Button>
-              <Button variant="secondary" size="sm" onClick={advanceOnboardingGuide}>
-                {activeOnboardingGuide.step >= onboardingGuides.length ? "完了" : "次へ"}
+              <Button variant="secondary" size="sm" onClick={completeOnboardingGuide}>
+                完了
               </Button>
             </Cluster>
           </Stack>
