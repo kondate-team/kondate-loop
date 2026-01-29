@@ -28,6 +28,7 @@ import { KondateScreen } from "@/screens/KondateScreen"
 import { RecipeBookScreen } from "@/screens/RecipeBookScreen"
 import { RecipeCatalogScreen } from "@/screens/RecipeCatalogScreen"
 import { MyPageScreen } from "@/screens/MyPageScreen"
+import { ShareRecipeScreen, ShareSetScreen } from "@/screens/ShareScreens"
 import {
   OnboardingScreen,
   AuthLandingScreen,
@@ -59,6 +60,8 @@ export type ScreenKey =
   | "book"
   | "catalog"
   | "mypage"
+  | "share-recipe"
+  | "share-set"
   | "onboarding"
   | "set-select"
   | "set-create"
@@ -98,6 +101,14 @@ type SetTemplate = {
   description?: string
   recipeIds?: string[]
   imageUrl?: string
+}
+
+const getShareViewFromPath = () => {
+  if (typeof window === "undefined") return null
+  const match = window.location.pathname.match(/^\/share\/(recipe|set)\/([^/]+)$/)
+  if (!match) return null
+  const type = match[1] === "set" ? "set" : "recipe"
+  return { type, id: match[2] }
 }
 
 const buildShoppingItemsFromSet = (
@@ -149,7 +160,11 @@ const buildShoppingItemsFromSet = (
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = React.useState(false)
   const [hasOnboarded, setHasOnboarded] = React.useState(true)
-  const [screen, setScreen] = React.useState<ScreenKey>("auth")
+  const [screen, setScreen] = React.useState<ScreenKey>(() => {
+    const shareView = getShareViewFromPath()
+    if (!shareView) return "auth"
+    return shareView.type === "recipe" ? "share-recipe" : "share-set"
+  })
   const [, setHistory] = React.useState<ScreenKey[]>(["auth"])
   const [authError, setAuthError] = React.useState<{ title: string; message: string } | null>(null)
   const [logoutConfirm, setLogoutConfirm] = React.useState(false)
@@ -194,6 +209,10 @@ export default function App() {
     title: string
     type: "recipe" | "set"
   } | null>(null)
+  const [shareView, setShareView] = React.useState<{
+    type: "recipe" | "set"
+    id: string
+  } | null>(() => getShareViewFromPath())
   const [completionOpen, setCompletionOpen] = React.useState(false)
   const [currentSet, setCurrentSet] = React.useState<AnySet | null>(() => mockSets[0] ?? null)
   const [nextSet, setNextSet] = React.useState<AnySet | null>(() => mockSets[1] ?? null)
@@ -277,6 +296,15 @@ export default function App() {
     setHistory((prev) => [...prev, next])
     setScreen(next)
   }, [])
+
+  React.useEffect(() => {
+    const match = window.location.pathname.match(/^\/share\/(recipe|set)\/([^/]+)$/)
+    if (!match) return
+    const type = match[1] === "set" ? "set" : "recipe"
+    const id = match[2]
+    setShareView({ type, id })
+    navigate(type === "recipe" ? "share-recipe" : "share-set", true)
+  }, [navigate])
 
   const completeLogin = (firstTime?: boolean) => {
     setIsAuthenticated(true)
@@ -440,6 +468,16 @@ export default function App() {
     shareTarget?.type === "set" ? mySets.find((item) => item.id === shareTarget.id) : null
   const shareLinkTitle = shareLink?.title ?? ""
   const shareLinkTypeLabel = shareLink?.type === "set" ? "レシピセット" : "レシピ"
+  const shareRecipeView =
+    shareView?.type === "recipe"
+      ? recipePool.find((item) => item.id === shareView.id) ?? recipeDetailMock
+      : null
+  const shareSetView =
+    shareView?.type === "set"
+      ? publicSets.find((item) => item.id === shareView.id) ??
+        mySets.find((item) => item.id === shareView.id) ??
+        recipeSetDetailMock
+      : null
   const markPurchasedBadges = (badges?: StatusBadge[]) => {
     const filtered = (badges ?? []).filter(
       (badge) => !["フリー", "購入済み"].includes(badge.label) && !badge.label.includes("¥")
@@ -1221,6 +1259,20 @@ export default function App() {
             onToast={setToastMessage}
             onOpenArchive={() => navigate("archive")}
             onLogout={() => setLogoutConfirm(true)}
+          />
+        )
+      case "share-recipe":
+        return (
+          <ShareRecipeScreen
+            recipe={shareRecipeView ?? recipeDetailMock}
+            onBack={() => navigate("auth", true)}
+          />
+        )
+      case "share-set":
+        return (
+          <ShareSetScreen
+            recipeSet={shareSetView ?? recipeSetDetailMock}
+            onBack={() => navigate("auth", true)}
           />
         )
       case "onboarding":
