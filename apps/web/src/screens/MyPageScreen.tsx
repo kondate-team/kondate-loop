@@ -2,6 +2,7 @@ import * as React from "react"
 import { CreditCard, UserRound } from "lucide-react"
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer"
+import { StripeCardInput } from "@/components/StripeCardInput"
 import { HeaderBar } from "@/components/layout/HeaderBar"
 import { HeaderActions } from "@/components/layout/HeaderActions"
 import { Surface } from "@/components/primitives/Surface"
@@ -85,9 +86,8 @@ export function MyPageScreen({
   const selectedPlanDetail = planDetails[selectedPlanId]
   const [paymentOpen, setPaymentOpen] = React.useState(false)
   const [hasPayment, setHasPayment] = React.useState(false)
-  const [cardName, setCardName] = React.useState("")
-  const [cardNumber, setCardNumber] = React.useState("")
-  const [cardExpiry, setCardExpiry] = React.useState("")
+  // TODO: BE API連携時に使用 (POST /v1/payment-methods)
+  const [_paymentMethodId, setPaymentMethodId] = React.useState<string | null>(null)
   const [profileOpen, setProfileOpen] = React.useState(false)
   const [displayName, setDisplayName] = React.useState("あなた")
   const [profileBio, setProfileBio] = React.useState("")
@@ -553,41 +553,21 @@ export function MyPageScreen({
                   <Muted className="text-xs">確認後にプランが切り替わります。</Muted>
                 </Stack>
               </Surface>
-              <Stack gap="sm">
-                <input
-                  className="w-full rounded-full border border-border bg-card px-4 py-2 text-sm"
-                  placeholder="名義（例: KONDATE LOOP）"
-                  value={cardName}
-                  onChange={(event) => setCardName(event.target.value)}
-                />
-                <input
-                  className="w-full rounded-full border border-border bg-card px-4 py-2 text-sm"
-                  placeholder="カード番号（例: 4242 4242 4242 4242）"
-                  inputMode="numeric"
-                  value={cardNumber}
-                  onChange={(event) => setCardNumber(event.target.value)}
-                />
-                <input
-                  className="w-full rounded-full border border-border bg-card px-4 py-2 text-sm"
-                  placeholder="有効期限（MM/YY）"
-                  value={cardExpiry}
-                  onChange={(event) => setCardExpiry(event.target.value)}
-                />
-              </Stack>
-              <Button
-                className="w-full rounded-full"
-                onClick={() => {
+              <StripeCardInput
+                submitLabel="支払って変更する"
+                onSuccess={(pmId) => {
                   if (!planPending) return
+                  setPaymentMethodId(pmId)
                   setHasPayment(true)
                   setPlan(planPending)
                   setPlanChanged(planPending)
                   setPlanPending(null)
                   setPlanCheckoutOpen(false)
                 }}
-                disabled={!cardName.trim() || !cardNumber.trim() || !cardExpiry.trim()}
-              >
-                支払って変更する
-              </Button>
+                onError={(error) => {
+                  onToast?.(error)
+                }}
+              />
             </Stack>
           </Surface>
         </div>
@@ -689,38 +669,18 @@ export function MyPageScreen({
                   閉じる
                 </button>
               </Cluster>
-              <Stack gap="sm">
-                <input
-                  className="w-full rounded-full border border-border bg-card px-4 py-2 text-sm"
-                  placeholder="名義（例: KONDATE LOOP）"
-                  value={cardName}
-                  onChange={(event) => setCardName(event.target.value)}
-                />
-                <input
-                  className="w-full rounded-full border border-border bg-card px-4 py-2 text-sm"
-                  placeholder="カード番号（例: 4242 4242 4242 4242）"
-                  inputMode="numeric"
-                  value={cardNumber}
-                  onChange={(event) => setCardNumber(event.target.value)}
-                />
-                <input
-                  className="w-full rounded-full border border-border bg-card px-4 py-2 text-sm"
-                  placeholder="有効期限（MM/YY）"
-                  value={cardExpiry}
-                  onChange={(event) => setCardExpiry(event.target.value)}
-                />
-              </Stack>
-              <Button
-                className="w-full rounded-full"
-                onClick={() => {
+              <StripeCardInput
+                submitLabel="登録する"
+                onSuccess={(pmId) => {
+                  setPaymentMethodId(pmId)
                   setHasPayment(true)
                   setPaymentOpen(false)
                   onToast?.("お支払い情報を登録しました")
                 }}
-                disabled={!cardName.trim() || !cardNumber.trim() || !cardExpiry.trim()}
-              >
-                登録する
-              </Button>
+                onError={(error) => {
+                  onToast?.(error)
+                }}
+              />
             </Stack>
           </Surface>
         </div>
