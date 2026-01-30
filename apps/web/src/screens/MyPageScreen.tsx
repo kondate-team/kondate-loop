@@ -10,6 +10,12 @@ import { H2, H3, Body, Muted } from "@/components/primitives/Typography"
 import { SectionHeader } from "@/components/primitives/SectionHeader"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import {
+  isPushSupported,
+  requestPushToken,
+  getStoredPushToken,
+  clearPushToken,
+} from "@/lib/push"
 
 export function MyPageScreen({
   onOpenNotifications,
@@ -102,14 +108,10 @@ export function MyPageScreen({
   const membershipCount = 0
   const purchaseCount = 0
 
-  const pushSupported =
-    typeof window !== "undefined" &&
-    "Notification" in window &&
-    "serviceWorker" in navigator
+  const pushSupported = isPushSupported()
 
   React.useEffect(() => {
-    if (typeof window === "undefined") return
-    const storedToken = window.localStorage.getItem("kondate-push-token")
+    const storedToken = getStoredPushToken()
     if (storedToken) {
       setPushToken(storedToken)
       setPushEnabled(true)
@@ -124,21 +126,18 @@ export function MyPageScreen({
     if (pushEnabled) {
       setPushEnabled(false)
       setPushToken(null)
-      window.localStorage.removeItem("kondate-push-token")
+      clearPushToken()
       onToast?.("プッシュ通知をオフにしました")
       return
     }
     setPushPending(true)
     try {
-      const permission = await Notification.requestPermission()
-      if (permission !== "granted") {
+      const token = await requestPushToken()
+      if (!token) {
         onToast?.("通知の許可が必要です")
         setPushEnabled(false)
         return
       }
-      await navigator.serviceWorker.register("/push-sw.js")
-      const token = `push-${Date.now()}`
-      window.localStorage.setItem("kondate-push-token", token)
       setPushToken(token)
       setPushEnabled(true)
       onToast?.("プッシュ通知をオンにしました")
