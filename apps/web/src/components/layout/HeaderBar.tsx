@@ -60,7 +60,7 @@ export function HeaderBar({
             <button
               type="button"
               onClick={onHelpClick}
-              className="text-xs text-muted-foreground"
+              className="text-[11px] font-medium text-muted-foreground/65 transition-colors hover:text-muted-foreground"
             >
               使い方
             </button>
