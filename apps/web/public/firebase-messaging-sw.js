@@ -35,8 +35,8 @@ if (firebaseConfig.apiKey !== "YOUR_API_KEY") {
     const notificationTitle = payload.notification?.title || "こんだてLoop";
     const notificationOptions = {
       body: payload.notification?.body || "新しい通知が届きました",
-      icon: payload.notification?.icon || "/vite.svg",
-      badge: "/vite.svg",
+      icon: payload.notification?.icon || "/brand/kondate-icon-192.png",
+      badge: "/brand/kondate-icon-96.png",
       data: {
         url: payload.data?.link || payload.fcmOptions?.link || "/",
       },
