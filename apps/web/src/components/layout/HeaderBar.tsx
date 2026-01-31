@@ -49,12 +49,12 @@ export function HeaderBar({
             <button
               type="button"
               onClick={onLogoClick}
-              className="flex items-center gap-2 text-left"
+              className="flex items-center text-left"
             >
               <img
                 src="/brand/kondate-loop-logo.svg"
                 alt="こんだてLoop"
-                className="h-7 w-auto"
+                className="h-8 w-auto"
               />
             </button>
             <button

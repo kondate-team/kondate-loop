@@ -30,9 +30,8 @@ export function OnboardingScreen({ onStart }: { onStart?: () => void }) {
           <img
             src="/brand/kondate-loop-logo.svg"
             alt="こんだてLoop"
-            className="h-9 w-auto"
+            className="h-12 w-auto"
           />
-          <H2>こんだてLoop</H2>
           <Body>
             レシピをセットにして、<br />リストから選んで作る。<br />それだけ。
           </Body>
@@ -73,13 +72,12 @@ export function AuthLandingScreen({
       <div className="relative z-10 flex min-h-screen items-center justify-center px-6">
         <div className="w-full max-w-sm">
           <Stack gap="lg" align="center" className="text-center">
-            <Stack gap="sm" align="center">
+            <Stack gap="xs" align="center">
               <img
                 src="/brand/kondate-loop-logo.svg"
                 alt="こんだてLoop"
-                className="h-9 w-auto"
+                className="h-11 w-auto"
               />
-              <H2>こんだてループ</H2>
               <Body className="text-sm text-muted-foreground">
                 レシピを集めて、献立を回す。<br />
                 今日のごはんが迷わない。
@@ -128,13 +126,12 @@ export function LoginScreen({
           <span className="text-xs text-muted-foreground">ログイン</span>
           <span className="h-9 w-9" />
         </Cluster>
-        <Stack gap="sm" className="mt-6 items-center text-center">
+        <Stack gap="xs" className="mt-6 items-center text-center">
           <img
             src="/brand/kondate-loop-logo.svg"
             alt="こんだてLoop"
-            className="h-9 w-auto"
+            className="h-10 w-auto"
           />
-          <H2>こんだてループ</H2>
           <Body className="text-sm text-muted-foreground">
             おかえりなさい。<br />
             いつもの献立から始めましょう。
@@ -200,13 +197,12 @@ export function SignupScreen({
           <span className="text-xs text-muted-foreground">新規登録</span>
           <span className="h-9 w-9" />
         </Cluster>
-        <Stack gap="sm" className="mt-6 items-center text-center">
+        <Stack gap="xs" className="mt-6 items-center text-center">
           <img
             src="/brand/kondate-loop-logo.svg"
             alt="こんだてLoop"
-            className="h-9 w-auto"
+            className="h-10 w-auto"
           />
-          <H2>こんだてループ</H2>
           <Body className="text-sm text-muted-foreground">
             今日から、献立の迷いをなくしましょう。
           </Body>
@@ -1795,14 +1791,13 @@ export function NotificationsScreen({
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <div className="flex flex-1 items-center justify-center gap-3">
-            <button type="button" onClick={onOpenHome} className="flex items-center gap-2">
+          <div className="flex flex-1 items-center justify-center gap-2">
+            <button type="button" onClick={onOpenHome} className="flex items-center">
               <img
                 src="/brand/kondate-loop-logo.svg"
                 alt="こんだてLoop"
                 className="h-6 w-auto"
               />
-              <span className="text-base font-semibold">こんだてLoop</span>
             </button>
             <button
               type="button"
