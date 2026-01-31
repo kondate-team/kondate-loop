@@ -1,7 +1,9 @@
 import * as React from "react"
-import { CreditCard, UserRound } from "lucide-react"
+import { CreditCard, UserRound, Loader2 } from "lucide-react"
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer"
+import { StripeCardInput } from "@/components/StripeCardInput"
+import { registerPaymentMethod, createSubscription } from "@/api/payment"
 import { HeaderBar } from "@/components/layout/HeaderBar"
 import { HeaderActions } from "@/components/layout/HeaderActions"
 import { Surface } from "@/components/primitives/Surface"
@@ -85,9 +87,14 @@ export function MyPageScreen({
   const selectedPlanDetail = planDetails[selectedPlanId]
   const [paymentOpen, setPaymentOpen] = React.useState(false)
   const [hasPayment, setHasPayment] = React.useState(false)
-  const [cardName, setCardName] = React.useState("")
-  const [cardNumber, setCardNumber] = React.useState("")
-  const [cardExpiry, setCardExpiry] = React.useState("")
+  const [cardLast4, setCardLast4] = React.useState<string | null>(null)
+  const [cardBrand, setCardBrand] = React.useState<string | null>(null)
+  const [paymentLoading, setPaymentLoading] = React.useState(false)
+  const [checkoutLoading, setCheckoutLoading] = React.useState(false)
+
+  // TODO: 実際のユーザーIDとメールアドレスを認証から取得する
+  const currentUserId = "demo-user-1"
+  const currentUserEmail = "demo@example.com"
   const [profileOpen, setProfileOpen] = React.useState(false)
   const [displayName, setDisplayName] = React.useState("あなた")
   const [profileBio, setProfileBio] = React.useState("")
@@ -341,7 +348,11 @@ export function MyPageScreen({
                     <Cluster gap="sm">
                       <CreditCard className="h-4 w-4" />
                       <Body className="text-sm">
-                        {hasPayment ? "お支払い情報を登録済みです" : "お支払い情報が未登録です"}
+                        {hasPayment && cardLast4
+                          ? `${cardBrand?.toUpperCase() ?? "CARD"} •••• ${cardLast4}`
+                          : hasPayment
+                            ? "お支払い情報を登録済みです"
+                            : "お支払い情報が未登録です"}
                       </Body>
                     </Cluster>
                     <Cluster gap="sm" className="flex-wrap">
@@ -540,6 +551,7 @@ export function MyPageScreen({
                     setPlanPending(null)
                   }}
                   className="rounded-full border border-border px-2 py-1 text-xs text-muted-foreground"
+                  disabled={checkoutLoading}
                 >
                   閉じる
                 </button>
@@ -553,41 +565,99 @@ export function MyPageScreen({
                   <Muted className="text-xs">確認後にプランが切り替わります。</Muted>
                 </Stack>
               </Surface>
-              <Stack gap="sm">
-                <input
-                  className="w-full rounded-full border border-border bg-card px-4 py-2 text-sm"
-                  placeholder="名義（例: KONDATE LOOP）"
-                  value={cardName}
-                  onChange={(event) => setCardName(event.target.value)}
+              {checkoutLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-sm text-muted-foreground">決済処理中...</span>
+                </div>
+              ) : hasPayment && cardLast4 ? (
+                <Stack gap="sm">
+                  <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/30 px-4 py-3">
+                    <CreditCard className="h-4 w-4" />
+                    <span className="text-sm">
+                      {cardBrand?.toUpperCase()} •••• {cardLast4}
+                    </span>
+                  </div>
+                  <Button
+                    className="w-full rounded-full"
+                    onClick={async () => {
+                      if (!planPending) return
+                      setCheckoutLoading(true)
+                      try {
+                        const result = await createSubscription({
+                          userId: currentUserId,
+                        })
+                        if (result.ok) {
+                          setPlan(planPending)
+                          setPlanChanged(planPending)
+                          setPlanPending(null)
+                          setPlanCheckoutOpen(false)
+                        }
+                      } catch {
+                        onToast?.("決済に失敗しました")
+                      } finally {
+                        setCheckoutLoading(false)
+                      }
+                    }}
+                  >
+                    このカードで支払う
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => {
+                      setHasPayment(false)
+                      setCardLast4(null)
+                      setCardBrand(null)
+                    }}
+                  >
+                    別のカードを使う
+                  </Button>
+                </Stack>
+              ) : (
+                <StripeCardInput
+                  submitLabel="支払って変更する"
+                  onSuccess={async (paymentMethodId) => {
+                    if (!planPending) return
+                    setCheckoutLoading(true)
+                    try {
+                      // 1. カード登録
+                      const pmResult = await registerPaymentMethod({
+                        userId: currentUserId,
+                        email: currentUserEmail,
+                        paymentMethodId,
+                      })
+                      if (!pmResult.ok) {
+                        throw new Error("カード登録に失敗しました")
+                      }
+                      if (pmResult.card) {
+                        setCardLast4(pmResult.card.last4)
+                        setCardBrand(pmResult.card.brand)
+                      }
+
+                      // 2. サブスク作成
+                      const subResult = await createSubscription({
+                        userId: currentUserId,
+                      })
+                      if (subResult.ok) {
+                        setHasPayment(true)
+                        setPlan(planPending)
+                        setPlanChanged(planPending)
+                        setPlanPending(null)
+                        setPlanCheckoutOpen(false)
+                      }
+                    } catch {
+                      onToast?.("決済に失敗しました")
+                    } finally {
+                      setCheckoutLoading(false)
+                    }
+                  }}
+                  onError={(error) => {
+                    onToast?.(error)
+                  }}
                 />
-                <input
-                  className="w-full rounded-full border border-border bg-card px-4 py-2 text-sm"
-                  placeholder="カード番号（例: 4242 4242 4242 4242）"
-                  inputMode="numeric"
-                  value={cardNumber}
-                  onChange={(event) => setCardNumber(event.target.value)}
-                />
-                <input
-                  className="w-full rounded-full border border-border bg-card px-4 py-2 text-sm"
-                  placeholder="有効期限（MM/YY）"
-                  value={cardExpiry}
-                  onChange={(event) => setCardExpiry(event.target.value)}
-                />
-              </Stack>
-              <Button
-                className="w-full rounded-full"
-                onClick={() => {
-                  if (!planPending) return
-                  setHasPayment(true)
-                  setPlan(planPending)
-                  setPlanChanged(planPending)
-                  setPlanPending(null)
-                  setPlanCheckoutOpen(false)
-                }}
-                disabled={!cardName.trim() || !cardNumber.trim() || !cardExpiry.trim()}
-              >
-                支払って変更する
-              </Button>
+              )}
             </Stack>
           </Surface>
         </div>
@@ -685,42 +755,45 @@ export function MyPageScreen({
                   type="button"
                   onClick={() => setPaymentOpen(false)}
                   className="rounded-full border border-border px-2 py-1 text-xs text-muted-foreground"
+                  disabled={paymentLoading}
                 >
                   閉じる
                 </button>
               </Cluster>
-              <Stack gap="sm">
-                <input
-                  className="w-full rounded-full border border-border bg-card px-4 py-2 text-sm"
-                  placeholder="名義（例: KONDATE LOOP）"
-                  value={cardName}
-                  onChange={(event) => setCardName(event.target.value)}
+              {paymentLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-sm text-muted-foreground">登録中...</span>
+                </div>
+              ) : (
+                <StripeCardInput
+                  submitLabel="カードを登録"
+                  onSuccess={async (paymentMethodId) => {
+                    setPaymentLoading(true)
+                    try {
+                      const result = await registerPaymentMethod({
+                        userId: currentUserId,
+                        email: currentUserEmail,
+                        paymentMethodId,
+                      })
+                      if (result.ok && result.card) {
+                        setHasPayment(true)
+                        setCardLast4(result.card.last4)
+                        setCardBrand(result.card.brand)
+                        setPaymentOpen(false)
+                        onToast?.("お支払い情報を登録しました")
+                      }
+                    } catch (err) {
+                      onToast?.("登録に失敗しました")
+                    } finally {
+                      setPaymentLoading(false)
+                    }
+                  }}
+                  onError={(error) => {
+                    onToast?.(error)
+                  }}
                 />
-                <input
-                  className="w-full rounded-full border border-border bg-card px-4 py-2 text-sm"
-                  placeholder="カード番号（例: 4242 4242 4242 4242）"
-                  inputMode="numeric"
-                  value={cardNumber}
-                  onChange={(event) => setCardNumber(event.target.value)}
-                />
-                <input
-                  className="w-full rounded-full border border-border bg-card px-4 py-2 text-sm"
-                  placeholder="有効期限（MM/YY）"
-                  value={cardExpiry}
-                  onChange={(event) => setCardExpiry(event.target.value)}
-                />
-              </Stack>
-              <Button
-                className="w-full rounded-full"
-                onClick={() => {
-                  setHasPayment(true)
-                  setPaymentOpen(false)
-                  onToast?.("お支払い情報を登録しました")
-                }}
-                disabled={!cardName.trim() || !cardNumber.trim() || !cardExpiry.trim()}
-              >
-                登録する
-              </Button>
+              )}
             </Stack>
           </Surface>
         </div>
