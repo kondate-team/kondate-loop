@@ -637,6 +637,7 @@ app.post("/v1/connect/login-links", async (req, res) => {
 
 // 有料コンテンツ購入（レシピ、セット、メンバーシップ）
 // POST /v1/purchases/content
+// ※プラットフォーム受取型：全額プラットフォームが受け取り、後日クリエイターに振込
 app.post("/v1/purchases/content", async (req, res) => {
   try {
     const { userId, creatorId, contentType, contentId, amount } = req.body ?? {};
@@ -656,15 +657,12 @@ app.post("/v1/purchases/content", async (req, res) => {
       return res.status(400).json({ error: "Buyer has no payment method registered" });
     }
 
-    const creator = await getUser(creatorId);
-    if (!creator?.stripeConnectAccountId) {
-      return res.status(400).json({ error: "Creator has no Connect account" });
-    }
+    // プラットフォーム手数料を計算（10%）- 後日振込時に使用
+    const platformFee = Math.floor(amount * (PLATFORM_FEE_PERCENT / 100));
+    const creatorReceives = amount - platformFee;
 
-    // プラットフォーム手数料を計算（10%）
-    const applicationFeeAmount = Math.floor(amount * (PLATFORM_FEE_PERCENT / 100));
-
-    // PaymentIntent with transfer（Destination Charge）
+    // 通常のPaymentIntent（全額プラットフォームが受け取る）
+    // クリエイターへの支払いは後日銀行振込で行う
     const paymentIntent = await stripe.paymentIntents.create({
       amount,
       currency: "jpy",
@@ -675,26 +673,29 @@ app.post("/v1/purchases/content", async (req, res) => {
         enabled: true,
         allow_redirects: "never",
       },
-      application_fee_amount: applicationFeeAmount,
-      transfer_data: {
-        destination: creator.stripeConnectAccountId,
-      },
       metadata: {
         buyerId: userId,
         creatorId,
         contentType,
         contentId,
+        platformFee: String(platformFee),
+        creatorReceives: String(creatorReceives),
       },
     });
 
     if (paymentIntent.status === "succeeded") {
+      // TODO: 購入履歴をDBに保存（後日振込用）
+      console.log(`[Content Purchase] ${contentType}:${contentId} by ${userId}`);
+      console.log(`  Amount: ¥${amount}, Creator: ${creatorId}`);
+      console.log(`  Platform fee: ¥${platformFee}, Creator receives: ¥${creatorReceives}`);
+
       return res.json({
         ok: true,
         status: "succeeded",
         paymentIntentId: paymentIntent.id,
         amount,
-        platformFee: applicationFeeAmount,
-        creatorReceives: amount - applicationFeeAmount,
+        platformFee,
+        creatorReceives,
       });
     } else {
       return res.json({

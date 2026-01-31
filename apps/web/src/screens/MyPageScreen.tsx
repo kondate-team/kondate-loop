@@ -32,6 +32,11 @@ export function MyPageScreen({
   onToast,
   onOpenArchive,
   onLogout,
+  // カード情報（App全体で共有）
+  hasPaymentMethod,
+  cardLast4: cardLast4Prop,
+  cardBrand: cardBrandProp,
+  onPaymentMethodChange,
 }: {
   onOpenNotifications?: () => void
   onOpenFridge?: () => void
@@ -43,6 +48,11 @@ export function MyPageScreen({
   onToast?: (message: string) => void
   onOpenArchive?: () => void
   onLogout?: () => void
+  // カード情報（App全体で共有）
+  hasPaymentMethod?: boolean
+  cardLast4?: string | null
+  cardBrand?: string | null
+  onPaymentMethodChange?: (hasPayment: boolean, last4: string | null, brand: string | null) => void
 }) {
   const planOptions = [
     { id: "user", label: "ユーザー", price: "無料" },
@@ -94,9 +104,27 @@ export function MyPageScreen({
   const selectedPlan = planOptions.find((item) => item.id === selectedPlanId) ?? activePlan
   const selectedPlanDetail = planDetails[selectedPlanId]
   const [paymentOpen, setPaymentOpen] = React.useState(false)
-  const [hasPayment, setHasPayment] = React.useState(false)
-  const [cardLast4, setCardLast4] = React.useState<string | null>(null)
-  const [cardBrand, setCardBrand] = React.useState<string | null>(null)
+  // propsがある場合はpropsを使用、なければローカル状態
+  const [hasPaymentLocal, setHasPaymentLocal] = React.useState(false)
+  const [cardLast4Local, setCardLast4Local] = React.useState<string | null>(null)
+  const [cardBrandLocal, setCardBrandLocal] = React.useState<string | null>(null)
+
+  // propsが渡されている場合はpropsを優先
+  const hasPayment = hasPaymentMethod ?? hasPaymentLocal
+  const cardLast4 = cardLast4Prop ?? cardLast4Local
+  const cardBrand = cardBrandProp ?? cardBrandLocal
+
+  // カード情報を更新するヘルパー（propsがあればApp全体を更新、なければローカル更新）
+  const updatePaymentInfo = React.useCallback((newHasPayment: boolean, newLast4: string | null, newBrand: string | null) => {
+    if (onPaymentMethodChange) {
+      onPaymentMethodChange(newHasPayment, newLast4, newBrand)
+    } else {
+      setHasPaymentLocal(newHasPayment)
+      setCardLast4Local(newLast4)
+      setCardBrandLocal(newBrand)
+    }
+  }, [onPaymentMethodChange])
+
   const [paymentLoading, setPaymentLoading] = React.useState(false)
   const [checkoutLoading, setCheckoutLoading] = React.useState(false)
 
@@ -474,7 +502,7 @@ export function MyPageScreen({
                         size="sm"
                         disabled={!hasPayment}
                         onClick={() => {
-                          setHasPayment(false)
+                          updatePaymentInfo(false, null, null)
                           onToast?.("お支払い情報を削除しました")
                         }}
                       >
@@ -736,9 +764,7 @@ export function MyPageScreen({
                     size="sm"
                     className="w-full"
                     onClick={() => {
-                      setHasPayment(false)
-                      setCardLast4(null)
-                      setCardBrand(null)
+                      updatePaymentInfo(false, null, null)
                     }}
                   >
                     別のカードを使う
@@ -761,8 +787,7 @@ export function MyPageScreen({
                         throw new Error("カード登録に失敗しました")
                       }
                       if (pmResult.card) {
-                        setCardLast4(pmResult.card.last4)
-                        setCardBrand(pmResult.card.brand)
+                        updatePaymentInfo(true, pmResult.card.last4, pmResult.card.brand)
                       }
 
                       // 2. プランに応じて決済
@@ -773,7 +798,7 @@ export function MyPageScreen({
                           planId: "creator",
                         })
                         if (result.ok && result.status === "succeeded") {
-                          setHasPayment(true)
+                          // カード情報は既にupdatePaymentInfoで設定済み
                           setPlan(planPending)
                           setPlanChanged(planPending)
                           setPlanPending(null)
@@ -789,7 +814,7 @@ export function MyPageScreen({
                           priceId,
                         })
                         if (subResult.ok) {
-                          setHasPayment(true)
+                          // カード情報は既にupdatePaymentInfoで設定済み
                           setPlan(planPending)
                           setPlanChanged(planPending)
                           setPlanPending(null)
@@ -926,9 +951,7 @@ export function MyPageScreen({
                         paymentMethodId,
                       })
                       if (result.ok && result.card) {
-                        setHasPayment(true)
-                        setCardLast4(result.card.last4)
-                        setCardBrand(result.card.brand)
+                        updatePaymentInfo(true, result.card.last4, result.card.brand)
                         setPaymentOpen(false)
                         onToast?.("お支払い情報を登録しました")
                       }
