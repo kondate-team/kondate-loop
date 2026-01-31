@@ -37,6 +37,10 @@
    gh pr create --title "タイトル" --body "..." --base dev
    ```
 
+6. **ZenHubパイプラインを更新**
+   - PR作成時にIssueを `Review` へ移動
+   - マージ後にIssueを `Done` へ移動
+
 ### 絶対にやってはいけないこと
 
 - ❌ Issueを作らずに実装を始める
@@ -85,6 +89,29 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 | In Progress | 作業中 |
 | Review | PR待ち/レビュー中 |
 | Done | devにマージ済 |
+
+## ZenHubパイプライン更新（自動化）
+
+ZenHubの列移動は**必須**。自動化できる場合はスクリプトを使う。
+
+### 前提（トークン）
+- `ZENHUB_TOKEN` を環境変数に設定する（トークンは **リポジトリに保存しない**）。
+- GitHub CLI (`gh`) が利用可能な状態であること。
+
+### 実行コマンド
+```bash
+scripts/zenhub-move-issue.sh <issue番号> <pipeline名> [position]
+```
+
+例:
+```bash
+scripts/zenhub-move-issue.sh 60 Review top
+scripts/zenhub-move-issue.sh 60 Done top
+```
+
+### 補足
+- `pipeline名` は `Backlog / Sprint / In Progress / Review / Done` を前提とする。
+- `ZENHUB_TOKEN` が無い場合はユーザーに提供を依頼する。
 
 ## プロジェクト構成
 
