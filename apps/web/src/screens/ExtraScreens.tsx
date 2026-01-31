@@ -28,9 +28,9 @@ export function OnboardingScreen({ onStart }: { onStart?: () => void }) {
       <Surface tone="card" density="comfy" elevation="raised" className="mx-5 max-w-sm">
         <Stack gap="md" align="center" className="text-center">
           <img
-            src="/brand/kondate-icon-192.png"
+            src="/brand/kondate-loop-logo.svg"
             alt="こんだてLoop"
-            className="h-10 w-10"
+            className="h-9 w-auto"
           />
           <H2>こんだてLoop</H2>
           <Body>
@@ -75,9 +75,9 @@ export function AuthLandingScreen({
           <Stack gap="lg" align="center" className="text-center">
             <Stack gap="sm" align="center">
               <img
-                src="/brand/kondate-icon-192.png"
+                src="/brand/kondate-loop-logo.svg"
                 alt="こんだてLoop"
-                className="h-10 w-10"
+                className="h-9 w-auto"
               />
               <H2>こんだてループ</H2>
               <Body className="text-sm text-muted-foreground">
@@ -130,9 +130,9 @@ export function LoginScreen({
         </Cluster>
         <Stack gap="sm" className="mt-6 items-center text-center">
           <img
-            src="/brand/kondate-icon-192.png"
+            src="/brand/kondate-loop-logo.svg"
             alt="こんだてLoop"
-            className="h-10 w-10"
+            className="h-9 w-auto"
           />
           <H2>こんだてループ</H2>
           <Body className="text-sm text-muted-foreground">
@@ -202,9 +202,9 @@ export function SignupScreen({
         </Cluster>
         <Stack gap="sm" className="mt-6 items-center text-center">
           <img
-            src="/brand/kondate-icon-192.png"
+            src="/brand/kondate-loop-logo.svg"
             alt="こんだてLoop"
-            className="h-10 w-10"
+            className="h-9 w-auto"
           />
           <H2>こんだてループ</H2>
           <Body className="text-sm text-muted-foreground">
@@ -1798,9 +1798,9 @@ export function NotificationsScreen({
           <div className="flex flex-1 items-center justify-center gap-3">
             <button type="button" onClick={onOpenHome} className="flex items-center gap-2">
               <img
-                src="/brand/kondate-icon-192.png"
+                src="/brand/kondate-loop-logo.svg"
                 alt="こんだてLoop"
-                className="h-7 w-7"
+                className="h-6 w-auto"
               />
               <span className="text-base font-semibold">こんだてLoop</span>
             </button>
