@@ -23,6 +23,9 @@ import {
   recipeDetailMock,
   recipeSetDetailMock,
 } from "@/data/mockData"
+import { purchaseContent, registerPaymentMethod } from "@/api/payment"
+import { StripeCardInput } from "@/components/StripeCardInput"
+import { Loader2 } from "lucide-react"
 import type { Recipe as ApiRecipe, RecipeSet as ApiRecipeSet, StatusBadge } from "@/types/api"
 import { defaultUnitOptions } from "@/data/unitOptions"
 import { KondateScreen } from "@/screens/KondateScreen"
@@ -201,6 +204,18 @@ export default function App() {
     id: string
     priceLabel?: string
   } | null>(null)
+  const [paymentRequired, setPaymentRequired] = React.useState(false)
+  const [pendingPurchase, setPendingPurchase] = React.useState<{
+    type: "recipe" | "set"
+    id: string
+    creatorId: string
+    price: number
+  } | null>(null)
+  const [cardRegisterLoading, setCardRegisterLoading] = React.useState(false)
+  // カード情報（アプリ全体で共有）
+  const [hasPaymentMethod, setHasPaymentMethod] = React.useState(false)
+  const [cardLast4, setCardLast4] = React.useState<string | null>(null)
+  const [cardBrand, setCardBrand] = React.useState<string | null>(null)
   const [purchasePrompt, setPurchasePrompt] = React.useState<{
     type: "recipe" | "set"
     id: string
@@ -729,7 +744,47 @@ export default function App() {
     setToastMessage("保存を解除しました")
   }
 
-  function handlePurchaseRecipeFromCatalog(id: string) {
+  async function handlePurchaseRecipeFromCatalog(id: string) {
+    const recipe = publicRecipes.find((item) => item.id === id)
+    if (!recipe) return
+
+    // creatorIdとpriceがあれば実際の決済を実行
+    const recipeWithPrice = recipe as typeof recipe & { creatorId?: string; price?: number }
+    if (recipeWithPrice.creatorId && recipeWithPrice.price) {
+      try {
+        setToastMessage("決済処理中...")
+        const result = await purchaseContent({
+          userId: "test-user-123", // TODO: 実際のユーザーIDに置き換え
+          creatorId: recipeWithPrice.creatorId,
+          contentType: "recipe",
+          contentId: id,
+          amount: recipeWithPrice.price,
+        })
+        if (!result.ok) {
+          setToastMessage("決済に失敗しました")
+          return
+        }
+        console.log("Recipe purchase result:", result)
+      } catch (error: unknown) {
+        console.error("Recipe purchase error:", error)
+        // エラーメッセージを解析してカード未登録を検知
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        if (errorMessage.includes("payment method") || errorMessage.includes("stripeCustomerId")) {
+          // 購入情報を保持してカード登録ダイアログを表示
+          setPendingPurchase({
+            type: "recipe",
+            id,
+            creatorId: recipeWithPrice.creatorId,
+            price: recipeWithPrice.price,
+          })
+          setPaymentRequired(true)
+          return
+        }
+        setToastMessage("決済に失敗しました")
+        return
+      }
+    }
+
     setPublicRecipes((prev) =>
       prev.map((item) =>
         item.id === id ? { ...item, statusBadges: markPurchasedBadges(item.statusBadges) } : item
@@ -739,7 +794,47 @@ export default function App() {
     setPurchasePrompt({ type: "recipe", id })
   }
 
-  function handlePurchaseSetFromCatalog(id: string) {
+  async function handlePurchaseSetFromCatalog(id: string) {
+    const setItem = publicSets.find((item) => item.id === id)
+    if (!setItem) return
+
+    // creatorIdとpriceがあれば実際の決済を実行
+    const setWithPrice = setItem as typeof setItem & { creatorId?: string; price?: number }
+    if (setWithPrice.creatorId && setWithPrice.price) {
+      try {
+        setToastMessage("決済処理中...")
+        const result = await purchaseContent({
+          userId: "test-user-123", // TODO: 実際のユーザーIDに置き換え
+          creatorId: setWithPrice.creatorId,
+          contentType: "set",
+          contentId: id,
+          amount: setWithPrice.price,
+        })
+        if (!result.ok) {
+          setToastMessage("決済に失敗しました")
+          return
+        }
+        console.log("Set purchase result:", result)
+      } catch (error: unknown) {
+        console.error("Set purchase error:", error)
+        // エラーメッセージを解析してカード未登録を検知
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        if (errorMessage.includes("payment method") || errorMessage.includes("stripeCustomerId")) {
+          // 購入情報を保持してカード登録ダイアログを表示
+          setPendingPurchase({
+            type: "set",
+            id,
+            creatorId: setWithPrice.creatorId,
+            price: setWithPrice.price,
+          })
+          setPaymentRequired(true)
+          return
+        }
+        setToastMessage("決済に失敗しました")
+        return
+      }
+    }
+
     setPublicSets((prev) =>
       prev.map((item) =>
         item.id === id ? { ...item, statusBadges: markPurchasedBadges(item.statusBadges) } : item
@@ -769,6 +864,35 @@ export default function App() {
 
   const handleConfirmPurchaseIntent = () => {
     if (!purchaseConfirm) return
+
+    // レシピ/セットの情報を取得
+    const item = purchaseConfirm.type === "recipe"
+      ? publicRecipes.find((r) => r.id === purchaseConfirm.id)
+      : publicSets.find((s) => s.id === purchaseConfirm.id)
+
+    if (!item) return
+
+    // creatorIdとpriceを取得（型アサーション）
+    const itemWithPrice = item as typeof item & { creatorId?: string; price?: number }
+    const creatorId = itemWithPrice.creatorId
+    const price = itemWithPrice.price
+
+    // 価格情報がある場合はカード選択画面を表示
+    if (creatorId && price) {
+      setPendingPurchase({
+        type: purchaseConfirm.type,
+        id: purchaseConfirm.id,
+        creatorId,
+        price,
+      })
+      setPaymentRequired(true)
+      setPurchaseConfirm(null)
+      closeRecipe()
+      closeSet()
+      return
+    }
+
+    // 価格情報がない場合は従来の処理（モック）
     if (purchaseConfirm.type === "recipe") {
       handlePurchaseRecipeFromCatalog(purchaseConfirm.id)
       closeRecipe()
@@ -1449,6 +1573,15 @@ export default function App() {
             onToast={setToastMessage}
             onOpenArchive={() => navigate("archive")}
             onLogout={() => setLogoutConfirm(true)}
+            // カード情報（App全体で共有）
+            hasPaymentMethod={hasPaymentMethod}
+            cardLast4={cardLast4}
+            cardBrand={cardBrand}
+            onPaymentMethodChange={(newHasPayment, newLast4, newBrand) => {
+              setHasPaymentMethod(newHasPayment)
+              setCardLast4(newLast4)
+              setCardBrand(newBrand)
+            }}
           />
         )
       case "share-recipe":
@@ -1632,7 +1765,7 @@ export default function App() {
         onClose={closeRecipe}
         data={recipeDetailData}
         cooked={selectedRecipeId ? cookedIds.has(selectedRecipeId) : false}
-        onToggleCooked={toggleCooked}
+        onToggleCooked={recipeContext === "kondate" ? toggleCooked : undefined}
         footer={recipeLocked ? undefined : recipeFooter}
         onBackToSet={returnToSetId ? backToSetDetail : undefined}
         onOpenAuthor={
@@ -1789,6 +1922,186 @@ export default function App() {
               >
                 キャンセル
               </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {paymentRequired ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200">
+          <div className="relative w-full max-w-sm overflow-hidden rounded-3xl bg-card p-6 shadow-xl motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95 motion-safe:slide-in-from-bottom-4 motion-safe:duration-200">
+            <button
+              type="button"
+              aria-label="閉じる"
+              onClick={() => {
+                setPaymentRequired(false)
+                setPendingPurchase(null)
+              }}
+              className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background text-sm text-muted-foreground"
+              disabled={cardRegisterLoading}
+            >
+              ×
+            </button>
+            <div className="text-center">
+              <div className="text-3xl">💳</div>
+              <div className="mt-3 text-base font-semibold">
+                {hasPaymentMethod ? "購入確認" : "カード登録が必要です"}
+              </div>
+              {pendingPurchase ? (
+                <div className="mt-2 text-sm text-muted-foreground">
+                  ¥{pendingPurchase.price.toLocaleString()}の
+                  {pendingPurchase.type === "recipe" ? "レシピ" : "セット"}を購入します
+                </div>
+              ) : null}
+            </div>
+            <div className="mt-4">
+              {cardRegisterLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-sm text-muted-foreground">処理中...</span>
+                </div>
+              ) : hasPaymentMethod && cardLast4 && pendingPurchase ? (
+                <Stack gap="sm">
+                  <div className="flex items-center justify-center gap-2 rounded-xl border border-border bg-muted/30 px-4 py-3">
+                    <span className="text-sm">
+                      {cardBrand?.toUpperCase() ?? "CARD"} •••• {cardLast4}
+                    </span>
+                  </div>
+                  <Button
+                    className="w-full rounded-full"
+                    onClick={async () => {
+                      setCardRegisterLoading(true)
+                      try {
+                        const purchaseResult = await purchaseContent({
+                          userId: "test-user-123",
+                          creatorId: pendingPurchase.creatorId,
+                          contentType: pendingPurchase.type,
+                          contentId: pendingPurchase.id,
+                          amount: pendingPurchase.price,
+                        })
+                        if (!purchaseResult.ok) {
+                          throw new Error("決済に失敗しました")
+                        }
+                        if (pendingPurchase.type === "recipe") {
+                          setPublicRecipes((prev) =>
+                            prev.map((item) =>
+                              item.id === pendingPurchase.id
+                                ? { ...item, statusBadges: markPurchasedBadges(item.statusBadges) }
+                                : item
+                            )
+                          )
+                        } else {
+                          setPublicSets((prev) =>
+                            prev.map((item) =>
+                              item.id === pendingPurchase.id
+                                ? { ...item, statusBadges: markPurchasedBadges(item.statusBadges) }
+                                : item
+                            )
+                          )
+                        }
+                        setPaymentRequired(false)
+                        setPurchaseConfirm(null)
+                        setToastMessage("購入しました")
+                        setPurchasePrompt({ type: pendingPurchase.type, id: pendingPurchase.id })
+                        setPendingPurchase(null)
+                      } catch (err) {
+                        const message = err instanceof Error ? err.message : "エラーが発生しました"
+                        setToastMessage(message)
+                      } finally {
+                        setCardRegisterLoading(false)
+                      }
+                    }}
+                  >
+                    このカードで ¥{pendingPurchase.price.toLocaleString()} を支払う
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => {
+                      setHasPaymentMethod(false)
+                      setCardLast4(null)
+                      setCardBrand(null)
+                    }}
+                  >
+                    別のカードを使う
+                  </Button>
+                </Stack>
+              ) : (
+                <StripeCardInput
+                  submitLabel={pendingPurchase ? `¥${pendingPurchase.price.toLocaleString()}で購入` : "カードを登録"}
+                  onSuccess={async (paymentMethodId) => {
+                    if (!pendingPurchase) {
+                      setPaymentRequired(false)
+                      return
+                    }
+                    setCardRegisterLoading(true)
+                    try {
+                      // 1. カード登録
+                      const pmResult = await registerPaymentMethod({
+                        userId: "test-user-123", // TODO: 実際のユーザーIDに置き換え
+                        email: "demo@example.com", // TODO: 実際のメールアドレスに置き換え
+                        paymentMethodId,
+                      })
+                      if (!pmResult.ok) {
+                        throw new Error("カード登録に失敗しました")
+                      }
+
+                      // カード情報をApp全体のstateに保存
+                      if (pmResult.card) {
+                        setHasPaymentMethod(true)
+                        setCardLast4(pmResult.card.last4)
+                        setCardBrand(pmResult.card.brand)
+                      }
+
+                      // 2. 購入処理を実行
+                      const purchaseResult = await purchaseContent({
+                        userId: "test-user-123",
+                        creatorId: pendingPurchase.creatorId,
+                        contentType: pendingPurchase.type,
+                        contentId: pendingPurchase.id,
+                        amount: pendingPurchase.price,
+                      })
+
+                      if (!purchaseResult.ok) {
+                        throw new Error("決済に失敗しました")
+                      }
+
+                      // 3. 購入成功の処理
+                      if (pendingPurchase.type === "recipe") {
+                        setPublicRecipes((prev) =>
+                          prev.map((item) =>
+                            item.id === pendingPurchase.id
+                              ? { ...item, statusBadges: markPurchasedBadges(item.statusBadges) }
+                              : item
+                          )
+                        )
+                      } else {
+                        setPublicSets((prev) =>
+                          prev.map((item) =>
+                            item.id === pendingPurchase.id
+                              ? { ...item, statusBadges: markPurchasedBadges(item.statusBadges) }
+                              : item
+                          )
+                        )
+                      }
+
+                      setPaymentRequired(false)
+                      setPurchaseConfirm(null)
+                      setToastMessage("購入しました")
+                      setPurchasePrompt({ type: pendingPurchase.type, id: pendingPurchase.id })
+                      setPendingPurchase(null)
+                    } catch (err) {
+                      const message = err instanceof Error ? err.message : "エラーが発生しました"
+                      setToastMessage(message)
+                    } finally {
+                      setCardRegisterLoading(false)
+                    }
+                  }}
+                  onError={(error) => {
+                    setToastMessage(error)
+                  }}
+                />
+              )}
             </div>
           </div>
         </div>
