@@ -3,7 +3,15 @@ import { CreditCard, UserRound, Loader2 } from "lucide-react"
 
 import { ScreenContainer } from "@/components/layout/ScreenContainer"
 import { StripeCardInput } from "@/components/StripeCardInput"
-import { registerPaymentMethod, createSubscription } from "@/api/payment"
+import {
+  registerPaymentMethod,
+  createSubscription,
+  purchasePlan,
+  createConnectAccount,
+  createConnectAccountLink,
+  getConnectAccountStatus,
+  createConnectLoginLink,
+} from "@/api/payment"
 import { HeaderBar } from "@/components/layout/HeaderBar"
 import { HeaderActions } from "@/components/layout/HeaderActions"
 import { Surface } from "@/components/primitives/Surface"
@@ -24,6 +32,11 @@ export function MyPageScreen({
   onToast,
   onOpenArchive,
   onLogout,
+  // カード情報（App全体で共有）
+  hasPaymentMethod,
+  cardLast4: cardLast4Prop,
+  cardBrand: cardBrandProp,
+  onPaymentMethodChange,
 }: {
   onOpenNotifications?: () => void
   onOpenFridge?: () => void
@@ -35,6 +48,11 @@ export function MyPageScreen({
   onToast?: (message: string) => void
   onOpenArchive?: () => void
   onLogout?: () => void
+  // カード情報（App全体で共有）
+  hasPaymentMethod?: boolean
+  cardLast4?: string | null
+  cardBrand?: string | null
+  onPaymentMethodChange?: (hasPayment: boolean, last4: string | null, brand: string | null) => void
 }) {
   const planOptions = [
     { id: "user", label: "ユーザー", price: "無料" },
@@ -86,11 +104,45 @@ export function MyPageScreen({
   const selectedPlan = planOptions.find((item) => item.id === selectedPlanId) ?? activePlan
   const selectedPlanDetail = planDetails[selectedPlanId]
   const [paymentOpen, setPaymentOpen] = React.useState(false)
-  const [hasPayment, setHasPayment] = React.useState(false)
-  const [cardLast4, setCardLast4] = React.useState<string | null>(null)
-  const [cardBrand, setCardBrand] = React.useState<string | null>(null)
+  // propsがある場合はpropsを使用、なければローカル状態
+  const [hasPaymentLocal, setHasPaymentLocal] = React.useState(false)
+  const [cardLast4Local, setCardLast4Local] = React.useState<string | null>(null)
+  const [cardBrandLocal, setCardBrandLocal] = React.useState<string | null>(null)
+
+  // propsが渡されている場合はpropsを優先
+  const hasPayment = hasPaymentMethod ?? hasPaymentLocal
+  const cardLast4 = cardLast4Prop ?? cardLast4Local
+  const cardBrand = cardBrandProp ?? cardBrandLocal
+
+  // カード情報を更新するヘルパー（propsがあればApp全体を更新、なければローカル更新）
+  const updatePaymentInfo = React.useCallback((newHasPayment: boolean, newLast4: string | null, newBrand: string | null) => {
+    if (onPaymentMethodChange) {
+      onPaymentMethodChange(newHasPayment, newLast4, newBrand)
+    } else {
+      setHasPaymentLocal(newHasPayment)
+      setCardLast4Local(newLast4)
+      setCardBrandLocal(newBrand)
+    }
+  }, [onPaymentMethodChange])
+
   const [paymentLoading, setPaymentLoading] = React.useState(false)
   const [checkoutLoading, setCheckoutLoading] = React.useState(false)
+
+  // Stripe Connect state
+  const [connectOnboardingOpen, setConnectOnboardingOpen] = React.useState(false)
+  const [connectStatus, setConnectStatus] = React.useState<{
+    hasAccount: boolean
+    payoutsEnabled: boolean
+    detailsSubmitted: boolean
+  }>({ hasAccount: false, payoutsEnabled: false, detailsSubmitted: false })
+  const [connectLoading, setConnectLoading] = React.useState(false)
+
+  // Price IDs from environment (Vite)
+  const PRICE_IDS: Record<string, string> = {
+    user_plus: import.meta.env.VITE_STRIPE_PRICE_ID_USER_PLUS || "",
+    creator_plus: import.meta.env.VITE_STRIPE_PRICE_ID_CREATOR_PLUS || "",
+    creator: import.meta.env.VITE_STRIPE_PRICE_ID_CREATOR || "",
+  }
 
   // TODO: 実際のユーザーIDとメールアドレスを認証から取得する
   const currentUserId = "demo-user-1"
@@ -122,6 +174,31 @@ export function MyPageScreen({
       setPushEnabled(true)
     }
   }, [])
+
+  // クリエイターの場合、Connect Accountの状態を確認
+  React.useEffect(() => {
+    if (accountType !== "creator") return
+    const checkConnectStatus = async () => {
+      try {
+        const result = await getConnectAccountStatus(currentUserId)
+        if (result.ok) {
+          setConnectStatus({
+            hasAccount: true,
+            payoutsEnabled: result.payoutsEnabled,
+            detailsSubmitted: result.detailsSubmitted,
+          })
+        }
+      } catch {
+        // アカウントがまだ作成されていない
+        setConnectStatus({
+          hasAccount: false,
+          payoutsEnabled: false,
+          detailsSubmitted: false,
+        })
+      }
+    }
+    checkConnectStatus()
+  }, [accountType, currentUserId])
 
   const togglePush = async () => {
     if (!pushSupported) {
@@ -288,19 +365,80 @@ export function MyPageScreen({
               </Stack>
 
               {accountType !== "user" ? (
-                <Stack gap="sm">
-                  <SectionHeader title="メンバーシップ管理" description="クリエイター" />
-                  <Surface tone="card" density="comfy" className="rounded-2xl">
-                    <Stack gap="sm">
-                      <Body className="text-sm">プランや掲示板、限定コンテンツを整えます。</Body>
-                      <Cluster gap="sm" className="flex-wrap">
-                        <Button variant="secondary" size="sm">概要を編集</Button>
-                        <Button variant="secondary" size="sm">プランを追加</Button>
-                        <Button variant="secondary" size="sm">プレビュー</Button>
-                      </Cluster>
-                    </Stack>
-                  </Surface>
-                </Stack>
+                <>
+                  <Stack gap="sm">
+                    <SectionHeader title="売上を受け取る設定" description="Stripe Connect" />
+                    <Surface tone="card" density="comfy" className="rounded-2xl">
+                      <Stack gap="sm">
+                        {connectStatus.payoutsEnabled ? (
+                          <>
+                            <Cluster gap="sm" align="center">
+                              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-green-100 text-green-600">✓</span>
+                              <Body className="text-sm">売上の受け取り設定が完了しています</Body>
+                            </Cluster>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={async () => {
+                                setConnectLoading(true)
+                                try {
+                                  const result = await createConnectLoginLink({ userId: currentUserId })
+                                  if (result.ok && result.url) {
+                                    window.open(result.url, "_blank")
+                                  }
+                                } catch {
+                                  onToast?.("ダッシュボードを開けませんでした")
+                                } finally {
+                                  setConnectLoading(false)
+                                }
+                              }}
+                              disabled={connectLoading}
+                            >
+                              {connectLoading ? "読み込み中..." : "売上ダッシュボードを開く"}
+                            </Button>
+                          </>
+                        ) : connectStatus.detailsSubmitted ? (
+                          <>
+                            <Cluster gap="sm" align="center">
+                              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                              <Body className="text-sm">審査中です。しばらくお待ちください。</Body>
+                            </Cluster>
+                          </>
+                        ) : (
+                          <>
+                            <Body className="text-sm">
+                              有料レシピを販売するには、売上を受け取るための設定が必要です。
+                            </Body>
+                            <Muted className="text-xs">
+                              本人確認と銀行口座の登録を行います（約5分）
+                            </Muted>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => setConnectOnboardingOpen(true)}
+                            >
+                              設定を開始する
+                            </Button>
+                          </>
+                        )}
+                      </Stack>
+                    </Surface>
+                  </Stack>
+
+                  <Stack gap="sm">
+                    <SectionHeader title="メンバーシップ管理" description="クリエイター" />
+                    <Surface tone="card" density="comfy" className="rounded-2xl">
+                      <Stack gap="sm">
+                        <Body className="text-sm">プランや掲示板、限定コンテンツを整えます。</Body>
+                        <Cluster gap="sm" className="flex-wrap">
+                          <Button variant="secondary" size="sm">概要を編集</Button>
+                          <Button variant="secondary" size="sm">プランを追加</Button>
+                          <Button variant="secondary" size="sm">プレビュー</Button>
+                        </Cluster>
+                      </Stack>
+                    </Surface>
+                  </Stack>
+                </>
               ) : null}
 
               <Stack gap="sm">
@@ -364,7 +502,7 @@ export function MyPageScreen({
                         size="sm"
                         disabled={!hasPayment}
                         onClick={() => {
-                          setHasPayment(false)
+                          updatePaymentInfo(false, null, null)
                           onToast?.("お支払い情報を削除しました")
                         }}
                       >
@@ -584,14 +722,33 @@ export function MyPageScreen({
                       if (!planPending) return
                       setCheckoutLoading(true)
                       try {
-                        const result = await createSubscription({
-                          userId: currentUserId,
-                        })
-                        if (result.ok) {
-                          setPlan(planPending)
-                          setPlanChanged(planPending)
-                          setPlanPending(null)
-                          setPlanCheckoutOpen(false)
+                        if (planPending === "creator") {
+                          // 買い切り
+                          const result = await purchasePlan({
+                            userId: currentUserId,
+                            planId: "creator",
+                          })
+                          if (result.ok && result.status === "succeeded") {
+                            setPlan(planPending)
+                            setPlanChanged(planPending)
+                            setPlanPending(null)
+                            setPlanCheckoutOpen(false)
+                          } else if (result.clientSecret) {
+                            onToast?.("追加認証が必要です")
+                          }
+                        } else {
+                          // サブスク（user_plus, creator_plus）
+                          const priceId = PRICE_IDS[planPending]
+                          const result = await createSubscription({
+                            userId: currentUserId,
+                            priceId,
+                          })
+                          if (result.ok) {
+                            setPlan(planPending)
+                            setPlanChanged(planPending)
+                            setPlanPending(null)
+                            setPlanCheckoutOpen(false)
+                          }
                         }
                       } catch {
                         onToast?.("決済に失敗しました")
@@ -607,9 +764,7 @@ export function MyPageScreen({
                     size="sm"
                     className="w-full"
                     onClick={() => {
-                      setHasPayment(false)
-                      setCardLast4(null)
-                      setCardBrand(null)
+                      updatePaymentInfo(false, null, null)
                     }}
                   >
                     別のカードを使う
@@ -632,20 +787,39 @@ export function MyPageScreen({
                         throw new Error("カード登録に失敗しました")
                       }
                       if (pmResult.card) {
-                        setCardLast4(pmResult.card.last4)
-                        setCardBrand(pmResult.card.brand)
+                        updatePaymentInfo(true, pmResult.card.last4, pmResult.card.brand)
                       }
 
-                      // 2. サブスク作成
-                      const subResult = await createSubscription({
-                        userId: currentUserId,
-                      })
-                      if (subResult.ok) {
-                        setHasPayment(true)
-                        setPlan(planPending)
-                        setPlanChanged(planPending)
-                        setPlanPending(null)
-                        setPlanCheckoutOpen(false)
+                      // 2. プランに応じて決済
+                      if (planPending === "creator") {
+                        // 買い切り
+                        const result = await purchasePlan({
+                          userId: currentUserId,
+                          planId: "creator",
+                        })
+                        if (result.ok && result.status === "succeeded") {
+                          // カード情報は既にupdatePaymentInfoで設定済み
+                          setPlan(planPending)
+                          setPlanChanged(planPending)
+                          setPlanPending(null)
+                          setPlanCheckoutOpen(false)
+                        } else if (result.clientSecret) {
+                          onToast?.("追加認証が必要です")
+                        }
+                      } else {
+                        // サブスク（user_plus, creator_plus）
+                        const priceId = PRICE_IDS[planPending]
+                        const subResult = await createSubscription({
+                          userId: currentUserId,
+                          priceId,
+                        })
+                        if (subResult.ok) {
+                          // カード情報は既にupdatePaymentInfoで設定済み
+                          setPlan(planPending)
+                          setPlanChanged(planPending)
+                          setPlanPending(null)
+                          setPlanCheckoutOpen(false)
+                        }
                       }
                     } catch {
                       onToast?.("決済に失敗しました")
@@ -777,9 +951,7 @@ export function MyPageScreen({
                         paymentMethodId,
                       })
                       if (result.ok && result.card) {
-                        setHasPayment(true)
-                        setCardLast4(result.card.last4)
-                        setCardBrand(result.card.brand)
+                        updatePaymentInfo(true, result.card.last4, result.card.brand)
                         setPaymentOpen(false)
                         onToast?.("お支払い情報を登録しました")
                       }
@@ -793,6 +965,77 @@ export function MyPageScreen({
                     onToast?.(error)
                   }}
                 />
+              )}
+            </Stack>
+          </Surface>
+        </div>
+      ) : null}
+      {connectOnboardingOpen ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4 py-6">
+          <Surface tone="card" density="comfy" className="w-full max-w-sm rounded-3xl">
+            <Stack gap="md">
+              <Cluster justify="between" align="center">
+                <H3 className="text-base">売上を受け取る設定</H3>
+                <button
+                  type="button"
+                  onClick={() => setConnectOnboardingOpen(false)}
+                  className="rounded-full border border-border px-2 py-1 text-xs text-muted-foreground"
+                  disabled={connectLoading}
+                >
+                  閉じる
+                </button>
+              </Cluster>
+              <Surface tone="section" density="comfy" className="border-transparent">
+                <Stack gap="sm">
+                  <H3 className="text-sm">設定の流れ</H3>
+                  <Stack gap="xs">
+                    <Muted className="text-xs">1. 本人確認書類のアップロード</Muted>
+                    <Muted className="text-xs">2. 銀行口座の登録</Muted>
+                    <Muted className="text-xs">3. 審査（通常1〜2営業日）</Muted>
+                  </Stack>
+                  <Muted className="text-xs mt-2">
+                    ※ Stripeの安全な画面で行います
+                  </Muted>
+                </Stack>
+              </Surface>
+              {connectLoading ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-sm text-muted-foreground">準備中...</span>
+                </div>
+              ) : (
+                <Button
+                  className="w-full rounded-full"
+                  onClick={async () => {
+                    setConnectLoading(true)
+                    try {
+                      // 1. Connect Account作成
+                      const accountResult = await createConnectAccount({
+                        userId: currentUserId,
+                        email: currentUserEmail,
+                      })
+                      if (!accountResult.ok) {
+                        throw new Error("アカウント作成に失敗しました")
+                      }
+
+                      // 2. オンボーディングURLを取得してリダイレクト
+                      const linkResult = await createConnectAccountLink({
+                        userId: currentUserId,
+                        returnUrl: `${window.location.origin}/mypage?connect=complete`,
+                        refreshUrl: `${window.location.origin}/mypage?connect=refresh`,
+                      })
+                      if (linkResult.ok && linkResult.url) {
+                        window.location.href = linkResult.url
+                      }
+                    } catch {
+                      onToast?.("設定を開始できませんでした")
+                    } finally {
+                      setConnectLoading(false)
+                    }
+                  }}
+                >
+                  設定を開始する
+                </Button>
               )}
             </Stack>
           </Surface>
