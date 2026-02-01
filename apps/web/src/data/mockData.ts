@@ -230,11 +230,21 @@ export const mockRecipes = [
   },
 ]
 
+// テスト用クリエイターID（実際のStripe Connect AccountのuserIdに対応）
+export const MOCK_CREATOR_IDS = {
+  kondatelab: "creator-kondatelab",
+  kitchenA: "creator-kitchen-a",
+  spice: "creator-spice",
+  patissier: "creator-patissier",
+}
+
 export const mockPublicRecipes = [
   {
     id: "p1",
     title: "週末ごちそうハンバーグ",
     author: "Kondatelab",
+    creatorId: MOCK_CREATOR_IDS.kondatelab,
+    price: 680,
     sourceUrl: "https://example.com/recipe",
     tags: ["洋食", "ごちそう", "45分以内"],
     cookTimeMinutes: 45,
@@ -253,6 +263,8 @@ export const mockPublicRecipes = [
     id: "p2",
     title: "韓国風キンパ",
     author: "キッチンA",
+    creatorId: MOCK_CREATOR_IDS.kitchenA,
+    price: 480,
     tags: ["韓国", "作り置き", "45分以内"],
     cookTimeMinutes: 40,
     savedCount: 110,
@@ -356,6 +368,8 @@ export const mockPublicSets = [
     count: 3,
     recipeIds: ["p1", "p2", "p4"],
     author: "Kondatelab",
+    creatorId: MOCK_CREATOR_IDS.kondatelab,
+    price: 680,
     sourceUrl: "https://example.com/set",
     tags: ["ごちそう", "洋食"],
     savedCount: 130,
@@ -370,6 +384,8 @@ export const mockPublicSets = [
     count: 3,
     recipeIds: ["p2", "r5", "r7"],
     author: "キッチンA",
+    creatorId: MOCK_CREATOR_IDS.kitchenA,
+    price: 480,
     tags: ["韓国", "定番"],
     savedCount: 85,
     createdAt: "2026-01-17T15:30:00.000Z",
