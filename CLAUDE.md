@@ -95,11 +95,13 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 ZenHubの列移動は**必須**。自動化できる場合はスクリプトを使う。
 
 ### 前提（トークン）
-- `ZENHUB_TOKEN` を環境変数に設定する（トークンは **リポジトリに保存しない**）。
-- GitHub CLI (`gh`) が利用可能な状態であること。
+- `ZENHUB_TOKEN` を環境変数に設定する
+- トークンの場所: `/Users/itsuki.matsumoto/claude-code/setting/zenhub.txt`
+- GitHub CLI (`gh`) が利用可能な状態であること
 
 ### 実行コマンド
 ```bash
+export ZENHUB_TOKEN=$(cat /Users/itsuki.matsumoto/claude-code/setting/zenhub.txt)
 scripts/zenhub-move-issue.sh <issue番号> <pipeline名> [position]
 ```
 
