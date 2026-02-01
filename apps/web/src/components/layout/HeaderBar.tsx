@@ -52,7 +52,7 @@ export function HeaderBar({
               className="flex items-center text-left"
             >
               <img
-                src="/brand/kondate-loop-logo.svg"
+                src={`${import.meta.env.BASE_URL}brand/kondate-loop-logo.svg`}
                 alt="こんだてLoop"
                 className="h-8 w-auto"
               />

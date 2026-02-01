@@ -28,7 +28,7 @@ export function OnboardingScreen({ onStart }: { onStart?: () => void }) {
       <Surface tone="card" density="comfy" elevation="raised" className="mx-5 max-w-sm">
         <Stack gap="md" align="center" className="text-center">
           <img
-            src="/brand/kondate-loop-logo.svg"
+            src={`${import.meta.env.BASE_URL}brand/kondate-loop-logo.svg`}
             alt="こんだてLoop"
             className="h-12 w-auto"
           />
@@ -74,7 +74,7 @@ export function AuthLandingScreen({
           <Stack gap="lg" align="center" className="text-center">
             <Stack gap="xs" align="center">
               <img
-                src="/brand/kondate-loop-logo.svg"
+                src={`${import.meta.env.BASE_URL}brand/kondate-loop-logo.svg`}
                 alt="こんだてLoop"
                 className="h-11 w-auto"
               />
@@ -128,7 +128,7 @@ export function LoginScreen({
         </Cluster>
         <Stack gap="xs" className="mt-6 items-center text-center">
           <img
-            src="/brand/kondate-loop-logo.svg"
+            src={`${import.meta.env.BASE_URL}brand/kondate-loop-logo.svg`}
             alt="こんだてLoop"
             className="h-10 w-auto"
           />
@@ -199,7 +199,7 @@ export function SignupScreen({
         </Cluster>
         <Stack gap="xs" className="mt-6 items-center text-center">
           <img
-            src="/brand/kondate-loop-logo.svg"
+            src={`${import.meta.env.BASE_URL}brand/kondate-loop-logo.svg`}
             alt="こんだてLoop"
             className="h-10 w-auto"
           />
@@ -1794,7 +1794,7 @@ export function NotificationsScreen({
           <div className="flex flex-1 items-center justify-center gap-2">
             <button type="button" onClick={onOpenHome} className="flex items-center">
               <img
-                src="/brand/kondate-loop-logo.svg"
+                src={`${import.meta.env.BASE_URL}brand/kondate-loop-logo.svg`}
                 alt="こんだてLoop"
                 className="h-6 w-auto"
               />
