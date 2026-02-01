@@ -63,12 +63,6 @@ Parameters:
 - PRには `Closes #<issue番号>` を入れてIssueと紐付ける
 - `dev` / `main` へは **直接pushしない**（PR経由のみ）
 
-### ZenHubパイプライン更新（必須）
-
-- PR作成時にIssueを `Review` へ移動する
-- `dev` にマージ後、Issueを `Done` に移動する
-- 自動化する場合は `scripts/zenhub-move-issue.sh` を使用する（`ZENHUB_TOKEN` が必要）
-
 ### 作業開始の手順
 
 ```bash

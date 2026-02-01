@@ -10,10 +10,10 @@ const navItems: {
   label: string
   icon: React.ReactNode
 }[] = [
-  { id: "kondate", label: "献立表", icon: <CalendarDays className="h-6 w-6" /> },
-  { id: "book", label: "レシピ帳", icon: <BookOpen className="h-6 w-6" /> },
-  { id: "catalog", label: "レシピカタログ", icon: <Store className="h-6 w-6" /> },
-  { id: "mypage", label: "マイページ", icon: <UserCircle className="h-6 w-6" /> },
+  { id: "kondate", label: "献立表", icon: <CalendarDays className="h-5 w-5" /> },
+  { id: "book", label: "レシピ帳", icon: <BookOpen className="h-5 w-5" /> },
+  { id: "catalog", label: "レシピカタログ", icon: <Store className="h-5 w-5" /> },
+  { id: "mypage", label: "マイページ", icon: <UserCircle className="h-5 w-5" /> },
 ]
 
 interface BottomNavProps {
@@ -23,7 +23,7 @@ interface BottomNavProps {
 
 export function BottomNav({ active, onChange }: BottomNavProps) {
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-20 border-t border-border bg-background/95 px-6 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur">
+    <nav className="fixed bottom-0 left-0 right-0 z-20 border-t border-border bg-background/95 px-6 py-3 backdrop-blur">
       <div className="mx-auto w-full max-w-sm">
         <div className="flex items-center justify-between">
           {navItems.map((item) => (
@@ -32,7 +32,7 @@ export function BottomNav({ active, onChange }: BottomNavProps) {
               type="button"
               onClick={() => onChange(item.id)}
               className={cn(
-                "flex h-12 w-12 items-center justify-center rounded-full transition",
+                "flex h-10 w-10 items-center justify-center rounded-full transition",
                 active === item.id
                   ? "bg-accent text-foreground"
                   : "text-muted-foreground"

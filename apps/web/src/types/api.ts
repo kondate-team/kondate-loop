@@ -1,14 +1,3 @@
-// Re-export from shared types package
-export type {
-  UserRole,
-  Recipe as SharedRecipe,
-  RecipeSet as SharedRecipeSet,
-  ApiResponse as SharedApiResponse,
-  ErrorCode,
-} from "@kondate-loop/types";
-export { ErrorCodes, ErrorMessages, ErrorCodeToStatus } from "@kondate-loop/types";
-
-// Legacy types for backwards compatibility with mock data
 export type StatusBadgeVariant = "free" | "purchased" | "price" | "membership" | "status"
 
 export type StatusBadge = {
