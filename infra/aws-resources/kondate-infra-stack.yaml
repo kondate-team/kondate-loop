@@ -7,6 +7,10 @@ Parameters:
     Type: String
     Default: '*'
     Description: Allowed origin for API CORS. Use a specific domain for production.
+  SystemId:
+    Type: String
+    Default: 'kondate-5036514'
+    Description: SystemId
   Env:
     Type: String
     Default: 'dev'
@@ -20,7 +24,7 @@ Resources:
   StaticBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub 'kondate-${Env}-s3-web-${AWS::AccountId}-${AWS::Region}'
+      BucketName: !Sub ${SystemId}-${Env}-web-backet
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -78,7 +82,7 @@ Resources:
     Type: AWS::CloudFront::CachePolicy
     Properties:
       CachePolicyConfig:
-        Name: !Sub 'kondate-${Env}-cf-cachepolicy-static'
+        Name: !Sub '${AWS::StackName}-static-cache'
         DefaultTTL: 86400
         MaxTTL: 31536000
         MinTTL: 0
@@ -96,7 +100,160 @@ Resources:
     Type: AWS::CloudFront::OriginAccessControl
     Properties:
       OriginAccessControlConfig:
-        Name: !Sub 'kondate-${Env}-cf-oac-static'
+        Name: !Sub '${AWS::StackName}-oac'
         OriginAccessControlOriginType: s3
         SigningBehavior: always
         SigningProtocol: sigv4
+ 
+  
+
+  # #BackEndresourceのため後日作成OR別テンプレートへ
+  # ItemsTable:
+  #   Name: !Sub ${SystemId}-${Env}-items-table
+  #   Type: AWS::DynamoDB::Table
+  #   Properties:
+  #     BillingMode: PAY_PER_REQUEST
+  #     AttributeDefinitions:
+  #       - AttributeName: id
+  #         AttributeType: S
+  #     KeySchema:
+  #       - AttributeName: id
+  #         KeyType: HASH
+
+  # ApiLambdaRole:
+  #   Name: !Sub ${SystemId}-${Env}-lambda-role
+  #   Type: AWS::IAM::Role
+  #   Properties:
+  #     AssumeRolePolicyDocument:
+  #       Version: '2012-10-17'
+  #       Statement:
+  #         - Effect: Allow
+  #           Principal:
+  #             Service: lambda.amazonaws.com
+  #           Action: sts:AssumeRole
+  #     ManagedPolicyArns:
+  #       - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  #     Policies:
+  #       - PolicyName: DynamoDbAccess
+  #         PolicyDocument:
+  #           Version: '2012-10-17'
+  #           Statement:
+  #             - Effect: Allow
+  #               Action:
+  #                 - dynamodb:GetItem
+  #                 - dynamodb:PutItem
+  #                 - dynamodb:UpdateItem
+  #                 - dynamodb:DeleteItem
+  #                 - dynamodb:Query
+  #                 - dynamodb:Scan
+  #               Resource: !GetAtt ItemsTable.Arn
+
+
+  # ApiHandler:
+  #   Type: AWS::Lambda::Function
+  #   Properties:
+  #     Runtime: nodejs20.x
+  #     Handler: index.handler
+  #     Role: !GetAtt ApiLambdaRole.Arn
+  #     Timeout: 10
+  #     Environment:
+  #       Variables:
+  #         TABLE_NAME: !Ref ItemsTable
+  #     Code:
+  #       ZipFile: |
+  #         const AWS = require('aws-sdk');
+  #         const ddb = new AWS.DynamoDB.DocumentClient();
+
+  #         exports.handler = async (event) => {
+  #           const method = event.requestContext?.http?.method || 'GET';
+  #           const table = process.env.TABLE_NAME;
+
+  #           try {
+  #             if (method === 'POST') {
+  #               const data = event.body ? JSON.parse(event.body) : {};
+  #               const item = { id: data.id || Date.now().toString(), ...data };
+  #               await ddb.put({ TableName: table, Item: item }).promise();
+  #               return { statusCode: 201, body: JSON.stringify(item) };
+  #             }
+
+  #             if (method === 'GET' && event.queryStringParameters?.id) {
+  #               const id = event.queryStringParameters.id;
+  #               const result = await ddb.get({ TableName: table, Key: { id } }).promise();
+  #               return { statusCode: 200, body: JSON.stringify(result.Item || null) };
+  #             }
+
+  #             return { statusCode: 200, body: JSON.stringify({ ok: true }) };
+  #           } catch (err) {
+  #             return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+  #           }
+  #         };
+
+  # HttpApi:
+  #   Type: AWS::ApiGatewayV2::Api
+  #   Properties:
+  #     Name: !Sub '${AWS::StackName}-http-api'
+  #     ProtocolType: HTTP
+  #     CorsConfiguration:
+  #       AllowOrigins:
+  #         - !Ref CorsAllowOrigin
+  #       AllowMethods:
+  #         - GET
+  #         - POST
+  #         - OPTIONS
+  #       AllowHeaders:
+  #         - content-type
+
+  # ApiIntegration:
+  #   Type: AWS::ApiGatewayV2::Integration
+  #   Properties:
+  #     ApiId: !Ref HttpApi
+  #     IntegrationType: AWS_PROXY
+  #     IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ApiHandler.Arn}/invocations'
+  #     PayloadFormatVersion: '2.0'
+
+  # ApiRouteProxy:
+  #   Type: AWS::ApiGatewayV2::Route
+  #   Properties:
+  #     ApiId: !Ref HttpApi
+  #     RouteKey: 'ANY /{proxy+}'
+  #     Target: !Sub 'integrations/${ApiIntegration}'
+
+  # ApiRouteRoot:
+  #   Type: AWS::ApiGatewayV2::Route
+  #   Properties:
+  #     ApiId: !Ref HttpApi
+  #     RouteKey: 'ANY /'
+  #     Target: !Sub 'integrations/${ApiIntegration}'
+
+  # ApiStage:
+  #   Type: AWS::ApiGatewayV2::Stage
+  #   Properties:
+  #     ApiId: !Ref HttpApi
+  #     StageName: '$default'
+  #     AutoDeploy: true
+
+  # ApiInvokePermission:
+  #   Type: AWS::Lambda::Permission
+  #   Properties:
+  #     Action: lambda:InvokeFunction
+  #     FunctionName: !Ref ApiHandler
+  #     Principal: apigateway.amazonaws.com
+  #     SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/*'
+
+# 参照の必要性が出てきたら、適宜Exportを追加する
+Outputs:
+  CloudFrontDomainName:
+    Description: CloudFront distribution domain name
+    Value: !GetAtt CloudFrontDistribution.DomainName
+
+  StaticBucketName:
+    Description: S3 bucket for static assets
+    Value: !Ref StaticBucket
+
+  # ApiEndpoint:
+  #   Description: HTTP API endpoint
+  #   Value: !GetAtt HttpApi.ApiEndpoint
+
+  # DynamoTableName:
+  #   Description: DynamoDB table name
+  #   Value: !Ref ItemsTable
