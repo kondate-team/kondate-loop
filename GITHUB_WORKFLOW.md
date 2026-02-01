@@ -41,11 +41,6 @@
 - IssueはZenHubボード上で管理
 - PRは必ずIssueと紐付ける（`Closes #<issue番号>`）
 
-### パイプライン更新（必須）
-- PR作成時にIssueを `Review` に移動
-- `dev` へマージ後にIssueを `Done` に移動
-- 自動化する場合は `scripts/zenhub-move-issue.sh` を使用（`ZENHUB_TOKEN` が必要）
-
 ## 4. 作業開始の手順（標準）
 必ず **最新の `dev` を基準**に `feature/*` を切る。
 

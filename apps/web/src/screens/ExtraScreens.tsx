@@ -27,11 +27,8 @@ export function OnboardingScreen({ onStart }: { onStart?: () => void }) {
     <ScreenContainer className="flex items-center justify-center">
       <Surface tone="card" density="comfy" elevation="raised" className="mx-5 max-w-sm">
         <Stack gap="md" align="center" className="text-center">
-          <img
-            src={`${import.meta.env.BASE_URL}brand/kondate-loop-logo.svg`}
-            alt="こんだてLoop"
-            className="h-12 w-auto"
-          />
+          <span className="text-3xl">🍽️</span>
+          <H2>こんだてLoop</H2>
           <Body>
             レシピをセットにして、<br />リストから選んで作る。<br />それだけ。
           </Body>
@@ -72,12 +69,9 @@ export function AuthLandingScreen({
       <div className="relative z-10 flex min-h-screen items-center justify-center px-6">
         <div className="w-full max-w-sm">
           <Stack gap="lg" align="center" className="text-center">
-            <Stack gap="xs" align="center">
-              <img
-                src={`${import.meta.env.BASE_URL}brand/kondate-loop-logo.svg`}
-                alt="こんだてLoop"
-                className="h-11 w-auto"
-              />
+            <Stack gap="sm" align="center">
+              <span className="text-3xl">🍽️</span>
+              <H2>こんだてループ</H2>
               <Body className="text-sm text-muted-foreground">
                 レシピを集めて、献立を回す。<br />
                 今日のごはんが迷わない。
@@ -126,12 +120,9 @@ export function LoginScreen({
           <span className="text-xs text-muted-foreground">ログイン</span>
           <span className="h-9 w-9" />
         </Cluster>
-        <Stack gap="xs" className="mt-6 items-center text-center">
-          <img
-            src={`${import.meta.env.BASE_URL}brand/kondate-loop-logo.svg`}
-            alt="こんだてLoop"
-            className="h-10 w-auto"
-          />
+        <Stack gap="sm" className="mt-6 items-center text-center">
+          <span className="text-3xl">🍽️</span>
+          <H2>こんだてループ</H2>
           <Body className="text-sm text-muted-foreground">
             おかえりなさい。<br />
             いつもの献立から始めましょう。
@@ -197,12 +188,9 @@ export function SignupScreen({
           <span className="text-xs text-muted-foreground">新規登録</span>
           <span className="h-9 w-9" />
         </Cluster>
-        <Stack gap="xs" className="mt-6 items-center text-center">
-          <img
-            src={`${import.meta.env.BASE_URL}brand/kondate-loop-logo.svg`}
-            alt="こんだてLoop"
-            className="h-10 w-auto"
-          />
+        <Stack gap="sm" className="mt-6 items-center text-center">
+          <span className="text-3xl">🍽️</span>
+          <H2>こんだてループ</H2>
           <Body className="text-sm text-muted-foreground">
             今日から、献立の迷いをなくしましょう。
           </Body>
@@ -1791,18 +1779,15 @@ export function NotificationsScreen({
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <div className="flex flex-1 items-center justify-center gap-2">
-            <button type="button" onClick={onOpenHome} className="flex items-center">
-              <img
-                src={`${import.meta.env.BASE_URL}brand/kondate-loop-logo.svg`}
-                alt="こんだてLoop"
-                className="h-6 w-auto"
-              />
+          <div className="flex flex-1 items-center justify-center gap-3">
+            <button type="button" onClick={onOpenHome} className="flex items-center gap-2">
+              <span className="text-xl">🍽️</span>
+              <span className="text-base font-semibold">こんだてLoop</span>
             </button>
             <button
               type="button"
               onClick={onOpenHelp}
-              className="text-[11px] font-medium text-muted-foreground/65 transition-colors hover:text-muted-foreground"
+              className="text-xs text-muted-foreground"
             >
               使い方
             </button>
