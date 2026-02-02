@@ -30,6 +30,31 @@ Resources:
         - Key: Owner
           Value: yukanagatake
 
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      # Scope is "infra" because this bucket stores internal deployment artifacts (not runtime/backend data).
+      BucketName: !Sub 'kondate-${Env}-infra-s3-artifacts-${AWS::AccountId}-${AWS::Region}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldArtifacts
+            Status: Enabled
+            ExpirationInDays: 90
+      Tags:
+        - Key: Owner
+          Value: yukanagatake
+
   StaticBucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties:
@@ -100,3 +125,11 @@ Resources:
         OriginAccessControlOriginType: s3
         SigningBehavior: always
         SigningProtocol: sigv4
+
+Outputs:
+  ArtifactBucketName:
+    Description: Artifact bucket name
+    Value: !Ref ArtifactBucket
+  ArtifactBucketArn:
+    Description: Artifact bucket ARN
+    Value: !GetAtt ArtifactBucket.Arn
