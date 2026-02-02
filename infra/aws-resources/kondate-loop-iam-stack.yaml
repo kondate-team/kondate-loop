@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Limited role for external developer to create/update/invoke Lambda + read logs (scoped by function name pattern)
+
+Parameters:
+  DeveloperPrincipalArn:
+    Type: String
+    Description: ARN of the IAM user/role that can assume this role (the external developer)
+
+  App:
+    Type: String
+    Default: kondate
+    Description: e.g. kondate
+  Env:
+    Type: String
+    Description: e.g. dev
+    Default: dev
+
+  AllowedRegion:
+    Type: String
+    Default: ap-northeast-1
+
+  LambdaExecutionRoleArn:
+    Type: String
+    Description: The ONLY execution role ARN that developer is allowed to pass to new Lambda functions
+
+Resources:
+  LambdaHelperRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: 'DevAccessRole'
+      MaxSessionDuration: 3600
+
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref DeveloperPrincipalArn
+            Action: sts:AssumeRole
+            Condition:
+              Bool:
+                aws:MultiFactorAuthPresent: 'true'
+
+      Policies:
+        - PolicyName: DevAccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # ---- Lambda (scoped by function name) ----
+              - Sid: LambdaListForConvenience
+                Effect: Allow
+                Action:
+                  - lambda:ListFunctions
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    aws:RequestedRegion: !Ref AllowedRegion
+
+              - Sid: LambdaCreateUpdateInvokeScoped
+                Effect: Allow
+                Action:
+                  - lambda:CreateFunction
+                  - lambda:GetFunction
+                  - lambda:GetFunctionConfiguration
+                  - lambda:UpdateFunctionCode
+                  - lambda:UpdateFunctionConfiguration
+                  - lambda:InvokeFunction
+                  - lambda:ListVersionsByFunction
+                Resource:
+                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${App}-${Env}-api-fn-*'
+                Condition:
+                  StringEquals:
+                    aws:RequestedRegion: !Ref AllowedRegion
+
+              # ---- CloudWatch Logs (read only) ----
+              - Sid: LogsListGroupsForConsole
+                Effect: Allow
+                Action:
+                  - logs:DescribeLogGroups
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    aws:RequestedRegion: !Ref AllowedRegion
+
+              - Sid: LogsReadScoped
+                Effect: Allow
+                Action:
+                  - logs:DescribeLogStreams
+                  - logs:GetLogEvents
+                  - logs:FilterLogEvents
+                Resource:
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${App}-${Env}-api-fn-*:*'
+                Condition:
+                  StringEquals:
+                    aws:RequestedRegion: !Ref AllowedRegion
+
+              # ---- PassRole (CRITICAL) ----
+              - Sid: AllowPassOnlyOneExecutionRoleToLambda
+                Effect: Allow
+                Action:
+                  - iam:PassRole
+                  - iam:GetRole
+                Resource:
+                  - !Ref LambdaExecutionRoleArn
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: lambda.amazonaws.com
