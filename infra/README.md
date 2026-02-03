@@ -1,83 +1,86 @@
 # Infra
 
-AWS / CloudFormation のインフラ資産向け README。
+AWS / CloudFormation のインフラ賁E��向け README、E
 
 ## 命名規則
 
-## リソース別の“現実的な命名”例
+- SystemId parameter default must be 'kondate-loop' in CloudFormation templates.
 
-### 1) S3バケット（ここだけ特別扱い推奨）
+## リソース別の“現実的な命名”侁E
 
-S3はグローバルでユニークが必要なので、候補Aに **uniq** を足すのが安全です。
+### 1) S3バケチE���E�ここだけ特別扱ぁE��奨�E�E
+
+S3はグローバルでユニ�Eクが忁E��なので、候補Aに **uniq** を足す�Eが安�Eです、E
 
 **`{app}-{env}-{scope}-s3-{name}-{accountId}-{region}`**
 
-例：
+例！E
 
 - `kondate-prod-web-s3-assets-123456789012-ap-northeast-1`
 
-S3の命名制約（小文字・63文字など）に合わせて、全体を小文字に寄せるのが一番ラクです。 ([AWS ドキュメント](https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html?utm_source=chatgpt.com))
+S3の命名制紁E��小文字�E63斁E��など�E�に合わせて、�E体を小文字に寁E��る�Eが一番ラクです、E([AWS ドキュメンチE(https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html?utm_source=chatgpt.com))
 
 ---
 
-### 2) CloudFront（実は“名前”を付けにくい）
+### 2) CloudFront�E�実�E“名前”を付けにくい�E�E
 
-CloudFront Distributionは “リソース名”というより **IDで管理**されがちです。
+CloudFront Distributionは “リソース名”とぁE��より **IDで管琁E*されがちです、E
 
-CloudFormationだと `Comment`（128文字以内）を説明的に入れるのが定石です。 ([AWS ドキュメント](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-cloudfront-distribution-distributionconfig.html?utm_source=chatgpt.com))
+CloudFormationだと `Comment`�E�E28斁E��以冁E��を説明的に入れるのが定石です、E([AWS ドキュメンチE(https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-cloudfront-distribution-distributionconfig.html?utm_source=chatgpt.com))
 
-- **Comment**：`kondate-prod-web-cf-assets`
-- **Tag(Name)**：`kondate-prod-web-cf-assets`
+- **Comment**�E�`kondate-prod-web-cf-assets`
+- **Tag(Name)**�E�`kondate-prod-web-cf-assets`
 
-    （CloudFrontはタグで見分ける運用が現実的）
+    �E�EloudFrontはタグで見�Eける運用が現実的�E�E
 
 ---
 
 ### 3) API Gateway
 
-- Rest API / HTTP API の “表示名” は比較的自由度があります（ただし変な記号を避けておけばOK）
-- **Stage名**は制約があるので、ここは `dev/stg/prod` をそのまま採用が強いです
+- Rest API / HTTP API の “表示名 Eは比輁E��自由度があります（ただし変な記号を避けておけばOK�E�E
+- **Stage吁E*は制紁E��あるので、ここ�E `dev/stg/prod` をそのまま採用が強ぁE��ぁE
 
-    （ステージ名は英数字・ハイフン・アンダースコアのみ、最大128文字） ([AWS ドキュメント](https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-stages.html?utm_source=chatgpt.com))
+    �E�スチE�Eジ名�E英数字�Eハイフン・アンダースコアのみ、最大128斁E��！E([AWS ドキュメンチE(https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-stages.html?utm_source=chatgpt.com))
 
-おすすめ：
+おすすめ�E�E
 
 - API名：`kondate-prod-api`
-- Stage名：`prod`（= envと一致）
+- Stage名：`prod`�E�E envと一致�E�E
 
 ---
 
-### 4) Lambda（64文字制限を絶対に意識）
+### 4) Lambda�E�E4斁E��制限を絶対に意識！E
 
-Lambda関数名は「関数名だけ指定する場合は **64文字**制限」があるので、ここが一番長さで詰みやすいです。 ([AWS ドキュメント](https://docs.aws.amazon.com/lambda/latest/api/API_CreateFunction.html))
+Lambda関数名�E「関数名だけ指定する場合�E **64斁E��E*制限」があるので、ここが一番長さで詰みめE��ぁE��す、E([AWS ドキュメンチE(https://docs.aws.amazon.com/lambda/latest/api/API_CreateFunction.html))
 
-またCloudFormationでも `FunctionName` を指定すると置き換え更新が絡むので、名前変更を前提にしない方が安全です。 ([AWS ドキュメント](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-lambda-function.html))
+またCloudFormationでめE`FunctionName` を指定すると置き換え更新が絡むので、名前変更を前提にしなぁE��が安�Eです、E([AWS ドキュメンチE(https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-lambda-function.html))
 
-おすすめフォーマット（短め）：
+おすすめフォーマット（短めE��！E
 
 **`{app}-{env}-api-fn-{action}`**
 
-例：
+例！E
 
 - `kondate-prod-api-fn-get-menus`
 - `kondate-prod-api-fn-put-menu`
 - `kondate-prod-api-fn-list-recipes`
 
-コツ：
+コチE��E
 
-- `get-menus` みたいに **動詞-名詞で短く**
-- `lambda` という単語自体は不要（`fn`で十分）
-- 将来増えるなら、`menu-` などドメインを先に付ける（候補C寄り）
+- `get-menus` みたいに **動詁E名詞で短ぁE*
+- `lambda` とぁE��単語�E体�E不要E��Efn`で十�E�E�E
+- 封E��増えるなら、`menu-` などドメインを�Eに付ける（候補C寁E���E�E
 
 ---
 
-### 5) DynamoDB（自由度高め、でも揃える）
+### 5) DynamoDB�E��E由度高め、でも揃える�E�E
 
-DynamoDBのテーブル名は 3〜255文字で、英数字・アンダースコア・ハイフン・ドットが許容されます。 ([AWS ドキュメント](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Constraints.html?utm_source=chatgpt.com))
+DynamoDBのチE�Eブル名�E 3、E55斁E��で、英数字�Eアンダースコア・ハイフン・ドットが許容されます、E([AWS ドキュメンチE(https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Constraints.html?utm_source=chatgpt.com))
 
-とはいえ全体統一のために **小文字＋ハイフン**で揃えるのがおすすめ。
+とはぁE��全体統一のために **小文字＋ハイフン**で揁E��る�Eがおすすめ、E
 
-例：
+例！E
 
 - `kondate-prod-data-ddb-menus`
 - `kondate-prod-data-ddb-users`
+

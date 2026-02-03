@@ -1,0 +1,148 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/awslabs/goformation/master/schema/cloudformation.schema.json
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Minimal backend placeholder (API Gateway + Lambda + DynamoDB)
+
+Parameters:
+  SystemId:
+    Type: String
+    Default: 'kondate-loop'
+    Description: SystemId
+  Env:
+    Type: String
+    Default: 'dev'
+    AllowedValues:
+      - 'dev'
+      - 'prod'
+    Description: Environment
+
+Resources:
+  RecipesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'kondate-${Env}-data-ddb-recipes'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Owner
+          Value: yukanagatake
+
+  BackendFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'kondate-${Env}-api-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDbAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource: !GetAtt RecipesTable.Arn
+
+  BackendFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'kondate-${Env}-api-fn-get-recipes'
+      Runtime: nodejs18.x
+      Handler: index.handler
+      Role: !GetAtt BackendFunctionRole.Arn
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref RecipesTable
+      Code:
+        ZipFile: |
+          exports.handler = async () => {
+            return {
+              statusCode: 200,
+              body: JSON.stringify({ message: "placeholder" }),
+            };
+          };
+      Tags:
+        - Key: Owner
+          Value: yukanagatake
+
+  BackendApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub 'kondate-${Env}-api'
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Tags:
+        - Key: Owner
+          Value: yukanagatake
+
+  RecipesResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref BackendApi
+      ParentId: !GetAtt BackendApi.RootResourceId
+      PathPart: recipes
+
+  RecipesGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref BackendApi
+      ResourceId: !Ref RecipesResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${BackendFunction.Arn}/invocations'
+      MethodResponses:
+        - StatusCode: 200
+
+  BackendApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - RecipesGetMethod
+    Properties:
+      RestApiId: !Ref BackendApi
+      StageName: !Ref Env
+
+  BackendFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref BackendFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${BackendApi}/*/GET/recipes'
+
+Outputs:
+  BackendApiEndpoint:
+    Description: API endpoint base URL
+    Value: !Sub 'https://${BackendApi}.execute-api.${AWS::Region}.amazonaws.com/${Env}'
+  RecipesTableName:
+    Description: DynamoDB table for recipes
+    Value: !Ref RecipesTable
+  BackendFunctionArn:
+    Description: Lambda function ARN
+    Value: !GetAtt BackendFunction.Arn

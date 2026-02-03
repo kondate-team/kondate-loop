@@ -1,0 +1,45 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Lambda execution role for {app}-{env}-api-fn-* functions
+
+Parameters:
+  App:
+    Type: String
+    Default: kondate
+    Description: Application name (e.g. kondate)
+
+  Env:
+    Type: String
+    Description: Environment name (e.g. dev)
+    Default: dev
+
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${App}-${Env}-lambda-execution-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+
+      Policies:
+        - PolicyName: AllowWriteLambdaLogsOnly
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: AllowCreateAndWriteLambdaLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${App}-${Env}-api-fn-*:*'
+
+Outputs:
+  LambdaExecutionRoleArn:
+    Description: ARN of Lambda execution role
+    Value: !GetAtt LambdaExecutionRole.Arn
