@@ -1,0 +1,109 @@
+﻿name: Deploy
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+      - "feature/**"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  backend-dev:
+    if: startsWith(github.ref, 'refs/heads/feature/') || github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    environment: dev
+    concurrency:
+      group: deploy-dev
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-region: ap-northeast-1
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_DEV }}
+
+      - name: Verify caller
+        run: aws sts get-caller-identity
+
+      - name: Deploy CloudFormation (dev)
+        run: |
+          aws cloudformation deploy \
+            --template-file infra/template.yaml \
+            --stack-name "${{ vars.CFN_STACK_NAME }}" \
+            --s3-bucket "${{ vars.CFN_ARTIFACT_BUCKET }}" \
+            --no-fail-on-empty-changeset \
+            --role-arn "${{ vars.CFN_EXEC_ROLE_ARN }}" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameter-overrides Env=dev
+
+  frontend-dev:
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    environment: dev
+    concurrency:
+      group: deploy-dev
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-region: ap-northeast-1
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_DEV }}
+
+      - name: Verify caller
+        run: aws sts get-caller-identity
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      - name: Upload frontend to S3 (dev)
+        run: |
+          aws s3 sync frontend/dist "s3://${{ vars.FRONTEND_BUCKET }}/" --delete
+
+  prod:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: prod
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+
+      - name: Deploy CloudFormation (prod)
+        run: |
+          aws cloudformation deploy \
+            --template-file infra/template.yaml \
+            --stack-name "${{ vars.CFN_STACK_NAME }}" \
+            --s3-bucket "${{ vars.CFN_ARTIFACT_BUCKET }}" \
+            --no-fail-on-empty-changeset \
+            --role-arn "${{ vars.CFN_EXEC_ROLE_ARN }}" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameter-overrides Env=prod
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      - name: Upload frontend to S3 (prod)
+        run: |
+          aws s3 sync frontend/dist "s3://${{ vars.FRONTEND_BUCKET }}/" --delete
