@@ -107,3 +107,15 @@ npm run dev
 
 - フロントの仕様は `apps/web/INITIAL_RELEASE_REQUIREMENTS.md` と Notion のMVPエンハンスシートが正です。
 - UIルールは `apps/web/UI_RULES.md` を参照してください。
+
+## CI/CD (GitHub Actions Deploy)
+
+- Workflow: `.github/workflows/deploy.yml`
+- Triggers:
+  - push to `dev`: deploys backend + frontend (dev)
+  - push to `feature/*`: deploys backend (dev)
+  - push to `main`: deploys prod
+- Manual run (dev only): Actions -> Deploy -> Run workflow, set branch `dev`,
+  set `allow_stack_delete=true` to delete a `ROLLBACK_COMPLETE` stack and recreate.
+- Secrets/Vars are read from repo/org (environment secrets are not used).
+  Required: `AWS_ROLE_ARN_DEV` (dev), `AWS_ROLE_ARN` (prod).
