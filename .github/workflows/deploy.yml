@@ -102,7 +102,8 @@ jobs:
 
       - name: Build frontend
         run: |
-          npm ci
+          npm ci --include=optional
+          node -e "require.resolve('@rollup/rollup-linux-x64-gnu')" || npm install --include=optional
           npm run build --workspace=packages/types
           npm run build --workspace=apps/web
 
@@ -186,7 +187,8 @@ jobs:
 
       - name: Build frontend
         run: |
-          npm ci
+          npm ci --include=optional
+          node -e "require.resolve('@rollup/rollup-linux-x64-gnu')" || npm install --include=optional
           npm run build --workspace=packages/types
           npm run build --workspace=apps/web
 
