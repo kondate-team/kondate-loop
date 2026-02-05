@@ -6,6 +6,12 @@ on:
       - dev
       - main
       - "feature/**"
+  workflow_dispatch:
+    inputs:
+      allow_stack_delete:
+        description: Allow deleting ROLLBACK_COMPLETE stacks (dev only)
+        required: false
+        default: 'false'
 
 permissions:
   id-token: write
@@ -15,11 +21,16 @@ jobs:
   backend-dev:
     if: startsWith(github.ref, 'refs/heads/feature/') || github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
+    env:
+      ALLOW_STACK_DELETE: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_stack_delete || 'false' }}
     concurrency:
       group: deploy-dev
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
+
+      - name: Show GITHUB_REF
+        run: echo "GITHUB_REF=$GITHUB_REF"
 
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v5
@@ -47,6 +58,34 @@ jobs:
           if [ -z "$ARTIFACT_BUCKET" ]; then ARTIFACT_BUCKET="kondate-infra-s3-artifacts-211669976488-ap-northeast-1"; fi
           ARTIFACT_BUCKET="${ARTIFACT_BUCKET#arn:aws:s3:::}"
 
+          FRONTEND_BUCKET_RAW="${{ vars.FRONTEND_BUCKET_DEV }}"
+          if [ -z "$FRONTEND_BUCKET_RAW" ]; then FRONTEND_BUCKET_RAW="${{ vars.FRONTEND_BUCKET }}"; fi
+          FRONTEND_BUCKET_RAW="${FRONTEND_BUCKET_RAW#arn:aws:s3:::}"
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          DEFAULT_FRONTEND_BUCKET="kondate-${ENV_NAME}-s3-web-${ACCOUNT_ID}-${AWS_REGION}"
+
+          bucket_exists() {
+            local bucket="$1"
+            local err
+            err=$(aws s3api head-bucket --bucket "$bucket" 2>&1) && return 0
+            if echo "$err" | grep -Eq "Not Found|404"; then return 1; fi
+            return 0
+          }
+
+          FRONTEND_BUCKET_EXISTS=false
+          if [ -n "$FRONTEND_BUCKET_RAW" ]; then
+            if bucket_exists "$FRONTEND_BUCKET_RAW"; then
+              FRONTEND_BUCKET_EXISTS=true
+            else
+              echo "FRONTEND_BUCKET not found: $FRONTEND_BUCKET_RAW" >&2
+              exit 1
+            fi
+          else
+            if bucket_exists "$DEFAULT_FRONTEND_BUCKET"; then
+              FRONTEND_BUCKET_EXISTS=true
+            fi
+          fi
+
           if [ -z "$STACK_NAME" ] || [ -z "$ARTIFACT_BUCKET" ]; then
             echo "Missing CloudFormation config (dev)." >&2
             echo "STACK_NAME=$STACK_NAME" >&2
@@ -57,6 +96,25 @@ jobs:
 
           ROLE_ARG=()
           if [ -n "$EXEC_ROLE_ARN" ]; then ROLE_ARG=(--role-arn "$EXEC_ROLE_ARN"); fi
+          PARAM_OVERRIDES=("Env=$ENV_NAME")
+          if [ "$FRONTEND_BUCKET_EXISTS" = true ]; then
+            if [ -n "$FRONTEND_BUCKET_RAW" ]; then
+              PARAM_OVERRIDES+=("StaticBucketName=$FRONTEND_BUCKET_RAW")
+            else
+              PARAM_OVERRIDES+=("StaticBucketName=$DEFAULT_FRONTEND_BUCKET")
+            fi
+          fi
+          STACK_STATUS=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].StackStatus" --output text 2>/dev/null || true)
+          if [ "$STACK_STATUS" = "ROLLBACK_COMPLETE" ]; then
+            if [ "${ALLOW_STACK_DELETE:-}" = "true" ]; then
+              echo "Stack in ROLLBACK_COMPLETE. Deleting $STACK_NAME..." >&2
+              aws cloudformation delete-stack --stack-name "$STACK_NAME"
+              aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME"
+            else
+              echo "Stack in ROLLBACK_COMPLETE. Set ALLOW_STACK_DELETE=true to delete and recreate." >&2
+              exit 1
+            fi
+          fi
 
           aws cloudformation deploy \
             --template-file infra/aws-resources/kondate-infra-stack.yaml \
@@ -65,7 +123,7 @@ jobs:
             --no-fail-on-empty-changeset \
             "${ROLE_ARG[@]}" \
             --capabilities CAPABILITY_NAMED_IAM \
-            --parameter-overrides Env=$ENV_NAME
+            --parameter-overrides "${PARAM_OVERRIDES[@]}"
 
   frontend-dev:
     if: github.ref == 'refs/heads/dev'
@@ -87,13 +145,21 @@ jobs:
 
       - name: Build frontend
         run: |
-          cd frontend
-          npm ci
-          npm run build
+          npm ci --include=optional
+          node -e "require.resolve('@rollup/rollup-linux-x64-gnu')" || npm -w apps/web i --no-save @rollup/rollup-linux-x64-gnu
+          npm run build --workspace=packages/types
+          npm run build --workspace=apps/web
 
       - name: Upload frontend to S3 (dev)
         run: |
-          aws s3 sync frontend/dist "s3://${{ vars.FRONTEND_BUCKET }}/" --delete
+          FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET_DEV }}"
+          if [ -z "$FRONTEND_BUCKET" ]; then FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET }}"; fi
+          FRONTEND_BUCKET="${FRONTEND_BUCKET#arn:aws:s3:::}"
+          if [ -z "$FRONTEND_BUCKET" ]; then
+            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            FRONTEND_BUCKET="kondate-dev-s3-web-${ACCOUNT_ID}-${AWS_REGION}"
+          fi
+          aws s3 sync apps/web/dist "s3://${FRONTEND_BUCKET}/" --delete
 
   prod:
     if: github.ref == 'refs/heads/main'
@@ -127,6 +193,34 @@ jobs:
           if [ -z "$ARTIFACT_BUCKET" ]; then ARTIFACT_BUCKET="kondate-infra-s3-artifacts-211669976488-ap-northeast-1"; fi
           ARTIFACT_BUCKET="${ARTIFACT_BUCKET#arn:aws:s3:::}"
 
+          FRONTEND_BUCKET_RAW="${{ vars.FRONTEND_BUCKET_PROD }}"
+          if [ -z "$FRONTEND_BUCKET_RAW" ]; then FRONTEND_BUCKET_RAW="${{ vars.FRONTEND_BUCKET }}"; fi
+          FRONTEND_BUCKET_RAW="${FRONTEND_BUCKET_RAW#arn:aws:s3:::}"
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          DEFAULT_FRONTEND_BUCKET="kondate-${ENV_NAME}-s3-web-${ACCOUNT_ID}-${AWS_REGION}"
+
+          bucket_exists() {
+            local bucket="$1"
+            local err
+            err=$(aws s3api head-bucket --bucket "$bucket" 2>&1) && return 0
+            if echo "$err" | grep -Eq "Not Found|404"; then return 1; fi
+            return 0
+          }
+
+          FRONTEND_BUCKET_EXISTS=false
+          if [ -n "$FRONTEND_BUCKET_RAW" ]; then
+            if bucket_exists "$FRONTEND_BUCKET_RAW"; then
+              FRONTEND_BUCKET_EXISTS=true
+            else
+              echo "FRONTEND_BUCKET not found: $FRONTEND_BUCKET_RAW" >&2
+              exit 1
+            fi
+          else
+            if bucket_exists "$DEFAULT_FRONTEND_BUCKET"; then
+              FRONTEND_BUCKET_EXISTS=true
+            fi
+          fi
+
           if [ -z "$STACK_NAME" ] || [ -z "$ARTIFACT_BUCKET" ]; then
             echo "Missing CloudFormation config (prod)." >&2
             echo "STACK_NAME=$STACK_NAME" >&2
@@ -137,6 +231,14 @@ jobs:
 
           ROLE_ARG=()
           if [ -n "$EXEC_ROLE_ARN" ]; then ROLE_ARG=(--role-arn "$EXEC_ROLE_ARN"); fi
+          PARAM_OVERRIDES=("Env=$ENV_NAME")
+          if [ "$FRONTEND_BUCKET_EXISTS" = true ]; then
+            if [ -n "$FRONTEND_BUCKET_RAW" ]; then
+              PARAM_OVERRIDES+=("StaticBucketName=$FRONTEND_BUCKET_RAW")
+            else
+              PARAM_OVERRIDES+=("StaticBucketName=$DEFAULT_FRONTEND_BUCKET")
+            fi
+          fi
 
           aws cloudformation deploy \
             --template-file infra/aws-resources/kondate-infra-stack.yaml \
@@ -145,14 +247,22 @@ jobs:
             --no-fail-on-empty-changeset \
             "${ROLE_ARG[@]}" \
             --capabilities CAPABILITY_NAMED_IAM \
-            --parameter-overrides Env=$ENV_NAME
+            --parameter-overrides "${PARAM_OVERRIDES[@]}"
 
       - name: Build frontend
         run: |
-          cd frontend
-          npm ci
-          npm run build
+          npm ci --include=optional
+          node -e "require.resolve('@rollup/rollup-linux-x64-gnu')" || npm -w apps/web i --no-save @rollup/rollup-linux-x64-gnu
+          npm run build --workspace=packages/types
+          npm run build --workspace=apps/web
 
       - name: Upload frontend to S3 (prod)
         run: |
-          aws s3 sync frontend/dist "s3://${{ vars.FRONTEND_BUCKET }}/" --delete
+          FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET_PROD }}"
+          if [ -z "$FRONTEND_BUCKET" ]; then FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET }}"; fi
+          FRONTEND_BUCKET="${FRONTEND_BUCKET#arn:aws:s3:::}"
+          if [ -z "$FRONTEND_BUCKET" ]; then
+            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            FRONTEND_BUCKET="kondate-prod-s3-web-${ACCOUNT_ID}-${AWS_REGION}"
+          fi
+          aws s3 sync apps/web/dist "s3://${FRONTEND_BUCKET}/" --delete
