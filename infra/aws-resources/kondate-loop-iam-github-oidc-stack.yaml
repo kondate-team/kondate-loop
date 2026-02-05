@@ -198,10 +198,20 @@ Resources:
               Federated: !Ref GitHubOidcProvider
             Action: sts:AssumeRoleWithWebIdentity
             Condition:
-              # NOTE: GitHub Actions jobs must set "environment: dev" to match this sub.
+              # NOTE: GitHub Actions jobs must run on refs/heads/dev to match this sub.
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                token.actions.githubusercontent.com:sub: !Sub 'repo:${GitHubOrg}/${GitHubRepo}:environment:dev'
+                token.actions.githubusercontent.com:sub: !Sub 'repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/dev'
+          - Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOidcProvider
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              # NOTE: GitHub Actions jobs must run on refs/heads/feature/* to match this sub.
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                token.actions.githubusercontent.com:sub: !Sub 'repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/feature/*'
       Policies:
         - PolicyName: S3Access
           PolicyDocument:
@@ -316,10 +326,10 @@ Resources:
               Federated: !Ref GitHubOidcProvider
             Action: sts:AssumeRoleWithWebIdentity
             Condition:
-              # NOTE: GitHub Actions jobs must set "environment: prod" to match this sub.
+              # NOTE: GitHub Actions jobs must run on refs/heads/main to match this sub.
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                token.actions.githubusercontent.com:sub: !Sub 'repo:${GitHubOrg}/${GitHubRepo}:environment:prod'
+                token.actions.githubusercontent.com:sub: !Sub 'repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/main'
       Policies:
         - PolicyName: S3Access
           PolicyDocument:
