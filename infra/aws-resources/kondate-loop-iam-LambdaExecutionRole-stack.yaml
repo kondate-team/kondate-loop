@@ -4,8 +4,8 @@ Description: Lambda execution role for {app}-{env}-api-fn-* functions
 Parameters:
   App:
     Type: String
-    Default: kondate
-    Description: Application name (e.g. kondate)
+    Default: kondate-loop
+    Description: Application name (e.g. kondate-loop)
 
   Env:
     Type: String

@@ -19,7 +19,7 @@ Resources:
   RecipesTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Sub 'kondate-${Env}-data-ddb-recipes'
+      TableName: !Sub 'kondate-loop-${Env}-data-ddb-recipes'
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: PK
@@ -40,7 +40,7 @@ Resources:
   BackendFunctionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub 'kondate-${Env}-api-role'
+      RoleName: !Sub 'kondate-loop-${Env}-api-role'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -69,7 +69,7 @@ Resources:
   BackendFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub 'kondate-${Env}-api-fn-get-recipes'
+      FunctionName: !Sub 'kondate-loop-${Env}-api-fn-get-recipes'
       Runtime: nodejs18.x
       Handler: index.handler
       Role: !GetAtt BackendFunctionRole.Arn
@@ -91,7 +91,7 @@ Resources:
   BackendApi:
     Type: AWS::ApiGateway::RestApi
     Properties:
-      Name: !Sub 'kondate-${Env}-api'
+      Name: !Sub 'kondate-loop-${Env}-api'
       EndpointConfiguration:
         Types:
           - REGIONAL

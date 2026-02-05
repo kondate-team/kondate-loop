@@ -29,7 +29,7 @@ Resources:
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
-      BucketName: !Sub 'kondate-${Env}-s3-web-${AWS::AccountId}-${AWS::Region}'
+      BucketName: !Sub 'kondate-loop-${Env}-s3-web-${AWS::AccountId}-${AWS::Region}'
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
