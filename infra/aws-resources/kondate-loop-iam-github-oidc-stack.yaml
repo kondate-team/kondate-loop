@@ -165,6 +165,46 @@ Resources:
                   - cloudformation:ListChangeSets
                   - cloudformation:ValidateTemplate
                 Resource: '*'
+        - PolicyName: CloudFrontManage
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudfront:CreateCachePolicy
+                  - cloudfront:UpdateCachePolicy
+                  - cloudfront:DeleteCachePolicy
+                  - cloudfront:GetCachePolicy
+                  - cloudfront:ListCachePolicies
+                  - cloudfront:CreateOriginAccessControl
+                  - cloudfront:UpdateOriginAccessControl
+                  - cloudfront:DeleteOriginAccessControl
+                  - cloudfront:GetOriginAccessControl
+                  - cloudfront:ListOriginAccessControls
+                  - cloudfront:CreateDistribution
+                  - cloudfront:UpdateDistribution
+                  - cloudfront:DeleteDistribution
+                  - cloudfront:GetDistribution
+                  - cloudfront:GetDistributionConfig
+                  - cloudfront:ListDistributions
+                  - cloudfront:TagResource
+                  - cloudfront:UntagResource
+                  - cloudfront:ListTagsForResource
+                Resource: '*'
+        - PolicyName: S3BucketManage
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:CreateBucket
+                  - s3:PutBucketPolicy
+                  - s3:DeleteBucketPolicy
+                  - s3:GetBucketPolicy
+                  - s3:PutBucketPublicAccessBlock
+                  - s3:GetBucketPublicAccessBlock
+                Resource:
+                  - !Sub 'arn:aws:s3:::kondate-*-s3-web-*'
         - PolicyName: PassCfnExecutionRole
           PolicyDocument:
             Version: '2012-10-17'
@@ -243,6 +283,46 @@ Resources:
                   - cloudformation:ListChangeSets
                   - cloudformation:ValidateTemplate
                 Resource: '*'
+        - PolicyName: CloudFrontManage
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudfront:CreateCachePolicy
+                  - cloudfront:UpdateCachePolicy
+                  - cloudfront:DeleteCachePolicy
+                  - cloudfront:GetCachePolicy
+                  - cloudfront:ListCachePolicies
+                  - cloudfront:CreateOriginAccessControl
+                  - cloudfront:UpdateOriginAccessControl
+                  - cloudfront:DeleteOriginAccessControl
+                  - cloudfront:GetOriginAccessControl
+                  - cloudfront:ListOriginAccessControls
+                  - cloudfront:CreateDistribution
+                  - cloudfront:UpdateDistribution
+                  - cloudfront:DeleteDistribution
+                  - cloudfront:GetDistribution
+                  - cloudfront:GetDistributionConfig
+                  - cloudfront:ListDistributions
+                  - cloudfront:TagResource
+                  - cloudfront:UntagResource
+                  - cloudfront:ListTagsForResource
+                Resource: '*'
+        - PolicyName: S3BucketManage
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:CreateBucket
+                  - s3:PutBucketPolicy
+                  - s3:DeleteBucketPolicy
+                  - s3:GetBucketPolicy
+                  - s3:PutBucketPublicAccessBlock
+                  - s3:GetBucketPublicAccessBlock
+                Resource:
+                  - !Sub 'arn:aws:s3:::kondate-*-s3-web-*'
         - PolicyName: PassCfnExecutionRole
           PolicyDocument:
             Version: '2012-10-17'
