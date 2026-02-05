@@ -26,6 +26,8 @@ Resources:
   StaticBucket:
     Condition: CreateStaticBucket
     Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       BucketName: !Sub 'kondate-${Env}-s3-web-${AWS::AccountId}-${AWS::Region}'
       PublicAccessBlockConfiguration:

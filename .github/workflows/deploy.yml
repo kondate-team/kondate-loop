@@ -93,6 +93,17 @@ jobs:
               PARAM_OVERRIDES+=("StaticBucketName=$DEFAULT_FRONTEND_BUCKET")
             fi
           fi
+          STACK_STATUS=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].StackStatus" --output text 2>/dev/null || true)
+          if [ "$STACK_STATUS" = "ROLLBACK_COMPLETE" ]; then
+            if [ "${ALLOW_STACK_DELETE:-}" = "true" ]; then
+              echo "Stack in ROLLBACK_COMPLETE. Deleting $STACK_NAME..." >&2
+              aws cloudformation delete-stack --stack-name "$STACK_NAME"
+              aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME"
+            else
+              echo "Stack in ROLLBACK_COMPLETE. Set ALLOW_STACK_DELETE=true to delete and recreate." >&2
+              exit 1
+            fi
+          fi
 
           aws cloudformation deploy \
             --template-file infra/aws-resources/kondate-infra-stack.yaml \
