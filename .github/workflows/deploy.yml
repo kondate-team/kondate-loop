@@ -6,6 +6,12 @@ on:
       - dev
       - main
       - "feature/**"
+  workflow_dispatch:
+    inputs:
+      allow_stack_delete:
+        description: Allow deleting ROLLBACK_COMPLETE stacks (dev only)
+        required: false
+        default: 'false'
 
 permissions:
   id-token: write
@@ -15,6 +21,8 @@ jobs:
   backend-dev:
     if: startsWith(github.ref, 'refs/heads/feature/') || github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
+    env:
+      ALLOW_STACK_DELETE: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_stack_delete || 'false' }}
     concurrency:
       group: deploy-dev
       cancel-in-progress: false
