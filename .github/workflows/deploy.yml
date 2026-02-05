@@ -32,12 +32,32 @@ jobs:
 
       - name: Deploy CloudFormation (dev)
         run: |
+          STACK_NAME="${{ vars.CFN_STACK_NAME_DEV }}"
+          if [ -z "$STACK_NAME" ]; then STACK_NAME="${{ vars.CFN_STACK_NAME }}"; fi
+
+          EXEC_ROLE_ARN="${{ secrets.CFN_EXEC_ROLE_ARN_DEV }}"
+          if [ -z "$EXEC_ROLE_ARN" ]; then EXEC_ROLE_ARN="${{ vars.CFN_EXEC_ROLE_ARN_DEV }}"; fi
+          if [ -z "$EXEC_ROLE_ARN" ]; then EXEC_ROLE_ARN="${{ vars.CFN_EXEC_ROLE_ARN }}"; fi
+
+          ARTIFACT_BUCKET="${{ vars.CFN_ARTIFACT_BUCKET_DEV }}"
+          if [ -z "$ARTIFACT_BUCKET" ]; then ARTIFACT_BUCKET="${{ vars.CFN_ARTIFACT_BUCKET }}"; fi
+          if [ -z "$ARTIFACT_BUCKET" ]; then ARTIFACT_BUCKET="${{ vars.CFN_ARTIFACT_BUCKET_NAME }}"; fi
+          ARTIFACT_BUCKET="${ARTIFACT_BUCKET#arn:aws:s3:::}"
+
+          if [ -z "$STACK_NAME" ] || [ -z "$EXEC_ROLE_ARN" ] || [ -z "$ARTIFACT_BUCKET" ]; then
+            echo "Missing CloudFormation config (dev)." >&2
+            echo "STACK_NAME=$STACK_NAME" >&2
+            echo "EXEC_ROLE_ARN=$EXEC_ROLE_ARN" >&2
+            echo "ARTIFACT_BUCKET=$ARTIFACT_BUCKET" >&2
+            exit 1
+          fi
+
           aws cloudformation deploy \
-            --template-file infra/template.yaml \
-            --stack-name "${{ vars.CFN_STACK_NAME }}" \
-            --s3-bucket "${{ vars.CFN_ARTIFACT_BUCKET }}" \
+            --template-file infra/aws-resources/kondate-infra-stack.yaml \
+            --stack-name "$STACK_NAME" \
+            --s3-bucket "$ARTIFACT_BUCKET" \
             --no-fail-on-empty-changeset \
-            --role-arn "${{ vars.CFN_EXEC_ROLE_ARN }}" \
+            --role-arn "$EXEC_ROLE_ARN" \
             --capabilities CAPABILITY_NAMED_IAM \
             --parameter-overrides Env=dev
 
@@ -86,12 +106,32 @@ jobs:
 
       - name: Deploy CloudFormation (prod)
         run: |
+          STACK_NAME="${{ vars.CFN_STACK_NAME_PROD }}"
+          if [ -z "$STACK_NAME" ]; then STACK_NAME="${{ vars.CFN_STACK_NAME }}"; fi
+
+          EXEC_ROLE_ARN="${{ secrets.CFN_EXEC_ROLE_ARN_PROD }}"
+          if [ -z "$EXEC_ROLE_ARN" ]; then EXEC_ROLE_ARN="${{ vars.CFN_EXEC_ROLE_ARN_PROD }}"; fi
+          if [ -z "$EXEC_ROLE_ARN" ]; then EXEC_ROLE_ARN="${{ vars.CFN_EXEC_ROLE_ARN }}"; fi
+
+          ARTIFACT_BUCKET="${{ vars.CFN_ARTIFACT_BUCKET_PROD }}"
+          if [ -z "$ARTIFACT_BUCKET" ]; then ARTIFACT_BUCKET="${{ vars.CFN_ARTIFACT_BUCKET }}"; fi
+          if [ -z "$ARTIFACT_BUCKET" ]; then ARTIFACT_BUCKET="${{ vars.CFN_ARTIFACT_BUCKET_NAME }}"; fi
+          ARTIFACT_BUCKET="${ARTIFACT_BUCKET#arn:aws:s3:::}"
+
+          if [ -z "$STACK_NAME" ] || [ -z "$EXEC_ROLE_ARN" ] || [ -z "$ARTIFACT_BUCKET" ]; then
+            echo "Missing CloudFormation config (prod)." >&2
+            echo "STACK_NAME=$STACK_NAME" >&2
+            echo "EXEC_ROLE_ARN=$EXEC_ROLE_ARN" >&2
+            echo "ARTIFACT_BUCKET=$ARTIFACT_BUCKET" >&2
+            exit 1
+          fi
+
           aws cloudformation deploy \
-            --template-file infra/template.yaml \
-            --stack-name "${{ vars.CFN_STACK_NAME }}" \
-            --s3-bucket "${{ vars.CFN_ARTIFACT_BUCKET }}" \
+            --template-file infra/aws-resources/kondate-infra-stack.yaml \
+            --stack-name "$STACK_NAME" \
+            --s3-bucket "$ARTIFACT_BUCKET" \
             --no-fail-on-empty-changeset \
-            --role-arn "${{ vars.CFN_EXEC_ROLE_ARN }}" \
+            --role-arn "$EXEC_ROLE_ARN" \
             --capabilities CAPABILITY_NAMED_IAM \
             --parameter-overrides Env=prod
 
