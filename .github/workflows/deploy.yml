@@ -50,6 +50,15 @@ jobs:
           FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET_DEV }}"
           if [ -z "$FRONTEND_BUCKET" ]; then FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET }}"; fi
           FRONTEND_BUCKET="${FRONTEND_BUCKET#arn:aws:s3:::}"
+          FRONTEND_BUCKET_EXISTS=false
+          if [ -n "$FRONTEND_BUCKET" ]; then
+            if aws s3api head-bucket --bucket "$FRONTEND_BUCKET" 2>/dev/null; then
+              FRONTEND_BUCKET_EXISTS=true
+            else
+              echo "FRONTEND_BUCKET not found; will create bucket via stack." >&2
+              FRONTEND_BUCKET=""
+            fi
+          fi
 
           if [ -z "$STACK_NAME" ] || [ -z "$ARTIFACT_BUCKET" ]; then
             echo "Missing CloudFormation config (dev)." >&2
@@ -62,7 +71,7 @@ jobs:
           ROLE_ARG=()
           if [ -n "$EXEC_ROLE_ARN" ]; then ROLE_ARG=(--role-arn "$EXEC_ROLE_ARN"); fi
           PARAM_OVERRIDES=("Env=$ENV_NAME")
-          if [ -n "$FRONTEND_BUCKET" ]; then PARAM_OVERRIDES+=("StaticBucketName=$FRONTEND_BUCKET"); fi
+          if [ "$FRONTEND_BUCKET_EXISTS" = true ]; then PARAM_OVERRIDES+=("StaticBucketName=$FRONTEND_BUCKET"); fi
 
           aws cloudformation deploy \
             --template-file infra/aws-resources/kondate-infra-stack.yaml \
@@ -94,11 +103,19 @@ jobs:
       - name: Build frontend
         run: |
           npm ci
+          npm run build --workspace=packages/types
           npm run build --workspace=apps/web
 
       - name: Upload frontend to S3 (dev)
         run: |
-          aws s3 sync apps/web/dist "s3://${{ vars.FRONTEND_BUCKET }}/" --delete
+          FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET_DEV }}"
+          if [ -z "$FRONTEND_BUCKET" ]; then FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET }}"; fi
+          FRONTEND_BUCKET="${FRONTEND_BUCKET#arn:aws:s3:::}"
+          if [ -z "$FRONTEND_BUCKET" ]; then
+            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            FRONTEND_BUCKET="kondate-dev-s3-web-${ACCOUNT_ID}-${AWS_REGION}"
+          fi
+          aws s3 sync apps/web/dist "s3://${FRONTEND_BUCKET}/" --delete
 
   prod:
     if: github.ref == 'refs/heads/main'
@@ -135,6 +152,15 @@ jobs:
           FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET_PROD }}"
           if [ -z "$FRONTEND_BUCKET" ]; then FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET }}"; fi
           FRONTEND_BUCKET="${FRONTEND_BUCKET#arn:aws:s3:::}"
+          FRONTEND_BUCKET_EXISTS=false
+          if [ -n "$FRONTEND_BUCKET" ]; then
+            if aws s3api head-bucket --bucket "$FRONTEND_BUCKET" 2>/dev/null; then
+              FRONTEND_BUCKET_EXISTS=true
+            else
+              echo "FRONTEND_BUCKET not found; will create bucket via stack." >&2
+              FRONTEND_BUCKET=""
+            fi
+          fi
 
           if [ -z "$STACK_NAME" ] || [ -z "$ARTIFACT_BUCKET" ]; then
             echo "Missing CloudFormation config (prod)." >&2
@@ -147,7 +173,7 @@ jobs:
           ROLE_ARG=()
           if [ -n "$EXEC_ROLE_ARN" ]; then ROLE_ARG=(--role-arn "$EXEC_ROLE_ARN"); fi
           PARAM_OVERRIDES=("Env=$ENV_NAME")
-          if [ -n "$FRONTEND_BUCKET" ]; then PARAM_OVERRIDES+=("StaticBucketName=$FRONTEND_BUCKET"); fi
+          if [ "$FRONTEND_BUCKET_EXISTS" = true ]; then PARAM_OVERRIDES+=("StaticBucketName=$FRONTEND_BUCKET"); fi
 
           aws cloudformation deploy \
             --template-file infra/aws-resources/kondate-infra-stack.yaml \
@@ -161,8 +187,16 @@ jobs:
       - name: Build frontend
         run: |
           npm ci
+          npm run build --workspace=packages/types
           npm run build --workspace=apps/web
 
       - name: Upload frontend to S3 (prod)
         run: |
-          aws s3 sync apps/web/dist "s3://${{ vars.FRONTEND_BUCKET }}/" --delete
+          FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET_PROD }}"
+          if [ -z "$FRONTEND_BUCKET" ]; then FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET }}"; fi
+          FRONTEND_BUCKET="${FRONTEND_BUCKET#arn:aws:s3:::}"
+          if [ -z "$FRONTEND_BUCKET" ]; then
+            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            FRONTEND_BUCKET="kondate-prod-s3-web-${ACCOUNT_ID}-${AWS_REGION}"
+          fi
+          aws s3 sync apps/web/dist "s3://${FRONTEND_BUCKET}/" --delete
