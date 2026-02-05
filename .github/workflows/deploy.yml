@@ -47,6 +47,10 @@ jobs:
           if [ -z "$ARTIFACT_BUCKET" ]; then ARTIFACT_BUCKET="kondate-infra-s3-artifacts-211669976488-ap-northeast-1"; fi
           ARTIFACT_BUCKET="${ARTIFACT_BUCKET#arn:aws:s3:::}"
 
+          FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET_DEV }}"
+          if [ -z "$FRONTEND_BUCKET" ]; then FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET }}"; fi
+          FRONTEND_BUCKET="${FRONTEND_BUCKET#arn:aws:s3:::}"
+
           if [ -z "$STACK_NAME" ] || [ -z "$ARTIFACT_BUCKET" ]; then
             echo "Missing CloudFormation config (dev)." >&2
             echo "STACK_NAME=$STACK_NAME" >&2
@@ -57,6 +61,8 @@ jobs:
 
           ROLE_ARG=()
           if [ -n "$EXEC_ROLE_ARN" ]; then ROLE_ARG=(--role-arn "$EXEC_ROLE_ARN"); fi
+          PARAM_OVERRIDES=("Env=$ENV_NAME")
+          if [ -n "$FRONTEND_BUCKET" ]; then PARAM_OVERRIDES+=("StaticBucketName=$FRONTEND_BUCKET"); fi
 
           aws cloudformation deploy \
             --template-file infra/aws-resources/kondate-infra-stack.yaml \
@@ -65,7 +71,7 @@ jobs:
             --no-fail-on-empty-changeset \
             "${ROLE_ARG[@]}" \
             --capabilities CAPABILITY_NAMED_IAM \
-            --parameter-overrides Env=$ENV_NAME
+            --parameter-overrides "${PARAM_OVERRIDES[@]}"
 
   frontend-dev:
     if: github.ref == 'refs/heads/dev'
@@ -87,13 +93,12 @@ jobs:
 
       - name: Build frontend
         run: |
-          cd frontend
           npm ci
-          npm run build
+          npm run build --workspace=apps/web
 
       - name: Upload frontend to S3 (dev)
         run: |
-          aws s3 sync frontend/dist "s3://${{ vars.FRONTEND_BUCKET }}/" --delete
+          aws s3 sync apps/web/dist "s3://${{ vars.FRONTEND_BUCKET }}/" --delete
 
   prod:
     if: github.ref == 'refs/heads/main'
@@ -127,6 +132,10 @@ jobs:
           if [ -z "$ARTIFACT_BUCKET" ]; then ARTIFACT_BUCKET="kondate-infra-s3-artifacts-211669976488-ap-northeast-1"; fi
           ARTIFACT_BUCKET="${ARTIFACT_BUCKET#arn:aws:s3:::}"
 
+          FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET_PROD }}"
+          if [ -z "$FRONTEND_BUCKET" ]; then FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET }}"; fi
+          FRONTEND_BUCKET="${FRONTEND_BUCKET#arn:aws:s3:::}"
+
           if [ -z "$STACK_NAME" ] || [ -z "$ARTIFACT_BUCKET" ]; then
             echo "Missing CloudFormation config (prod)." >&2
             echo "STACK_NAME=$STACK_NAME" >&2
@@ -137,6 +146,8 @@ jobs:
 
           ROLE_ARG=()
           if [ -n "$EXEC_ROLE_ARN" ]; then ROLE_ARG=(--role-arn "$EXEC_ROLE_ARN"); fi
+          PARAM_OVERRIDES=("Env=$ENV_NAME")
+          if [ -n "$FRONTEND_BUCKET" ]; then PARAM_OVERRIDES+=("StaticBucketName=$FRONTEND_BUCKET"); fi
 
           aws cloudformation deploy \
             --template-file infra/aws-resources/kondate-infra-stack.yaml \
@@ -145,14 +156,13 @@ jobs:
             --no-fail-on-empty-changeset \
             "${ROLE_ARG[@]}" \
             --capabilities CAPABILITY_NAMED_IAM \
-            --parameter-overrides Env=$ENV_NAME
+            --parameter-overrides "${PARAM_OVERRIDES[@]}"
 
       - name: Build frontend
         run: |
-          cd frontend
           npm ci
-          npm run build
+          npm run build --workspace=apps/web
 
       - name: Upload frontend to S3 (prod)
         run: |
-          aws s3 sync frontend/dist "s3://${{ vars.FRONTEND_BUCKET }}/" --delete
+          aws s3 sync apps/web/dist "s3://${{ vars.FRONTEND_BUCKET }}/" --delete

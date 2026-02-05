@@ -14,10 +14,17 @@ Parameters:
       - 'dev'
       - 'prod'
     Description: Environment
+  StaticBucketName:
+    Type: String
+    Default: ''
+    Description: Optional existing S3 bucket name for static assets. If set, the stack will not create a new bucket.
 
+Conditions:
+  CreateStaticBucket: !Equals [!Ref StaticBucketName, '']
 
 Resources:
   StaticBucket:
+    Condition: CreateStaticBucket
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub 'kondate-${Env}-s3-web-${AWS::AccountId}-${AWS::Region}'
@@ -33,7 +40,7 @@ Resources:
   StaticBucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties:
-      Bucket: !Ref StaticBucket
+      Bucket: !If [CreateStaticBucket, !Ref StaticBucket, !Ref StaticBucketName]
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -42,7 +49,10 @@ Resources:
             Principal:
               Service: cloudfront.amazonaws.com
             Action: s3:GetObject
-            Resource: !Sub '${StaticBucket.Arn}/*'
+            Resource: !If
+              - CreateStaticBucket
+              - !Sub '${StaticBucket.Arn}/*'
+              - !Sub 'arn:aws:s3:::${StaticBucketName}/*'
             Condition:
               StringEquals:
                 AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}'
@@ -56,7 +66,10 @@ Resources:
         DefaultRootObject: index.html
         Origins:
           - Id: StaticS3
-            DomainName: !GetAtt StaticBucket.RegionalDomainName
+            DomainName: !If
+              - CreateStaticBucket
+              - !GetAtt StaticBucket.RegionalDomainName
+              - !Sub '${StaticBucketName}.s3.${AWS::Region}.amazonaws.com'
             OriginAccessControlId: !Ref StaticOriginAccessControl
             S3OriginConfig: {}
         DefaultCacheBehavior:
@@ -78,7 +91,7 @@ Resources:
     Type: AWS::CloudFront::CachePolicy
     Properties:
       CachePolicyConfig:
-        Name: !Sub 'kondate-${Env}-cf-cachepolicy-static'
+        Name: !Sub '${AWS::StackName}-cf-cachepolicy-static'
         DefaultTTL: 86400
         MaxTTL: 31536000
         MinTTL: 0
@@ -96,7 +109,7 @@ Resources:
     Type: AWS::CloudFront::OriginAccessControl
     Properties:
       OriginAccessControlConfig:
-        Name: !Sub 'kondate-${Env}-cf-oac-static'
+        Name: !Sub '${AWS::StackName}-cf-oac-static'
         OriginAccessControlOriginType: s3
         SigningBehavior: always
         SigningProtocol: sigv4
