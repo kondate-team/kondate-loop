@@ -9,26 +9,26 @@ Parameters:
     Description: SystemId
   Env:
     Type: String
-    Default: 'dev'
+    Default: 'prod'
     AllowedValues:
       - 'dev'
       - 'prod'
     Description: Environment
   StageName:
     Type: String
-    Default: dev
+    Default: prod
     Description: API stage name
   TableName:
     Type: String
-    Default: KondateTable
+    Default: KondateTableProd
     Description: DynamoDB table name
   FunctionName:
     Type: String
-    Default: KondateCreateRecipe
+    Default: KondateCreateRecipeProd
     Description: Lambda function name
   ListFunctionName:
     Type: String
-    Default: RecipeListRecipes
+    Default: RecipeListRecipesProd
     Description: Lambda function name for list recipes
   PermissionsBoundaryArn:
     Type: String
