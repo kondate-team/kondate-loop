@@ -15,7 +15,6 @@ jobs:
   backend-dev:
     if: startsWith(github.ref, 'refs/heads/feature/') || github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
-    environment: dev
     concurrency:
       group: deploy-dev
       cancel-in-progress: false
@@ -45,7 +44,6 @@ jobs:
   frontend-dev:
     if: github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
-    environment: dev
     concurrency:
       group: deploy-dev
       cancel-in-progress: false
@@ -74,7 +72,6 @@ jobs:
   prod:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment: prod
     concurrency:
       group: deploy-prod
       cancel-in-progress: false
