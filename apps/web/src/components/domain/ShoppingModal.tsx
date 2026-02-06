@@ -1,5 +1,7 @@
 import * as React from "react"
 
+import { Refrigerator } from "lucide-react"
+
 import { Surface } from "@/components/primitives/Surface"
 import { Stack, Cluster } from "@/components/primitives/Stack"
 import { H2, H3 } from "@/components/primitives/Typography"
@@ -190,10 +192,10 @@ export function ShoppingModal({
             {fridgeItemsWithMismatchedUnit.length > 0 && (
               <Surface tone="section" density="comfy" className="border-transparent">
                 <Stack gap="sm">
-                  <H3 className="text-base">🧊 冷蔵庫にある食材</H3>
-                  <p className="text-xs text-muted-foreground">
-                    単位が異なるため自動で差し引けませんでした
-                  </p>
+                  <H3 className="flex items-center gap-1.5 text-base">
+                    <Refrigerator className="h-4 w-4" />
+                    冷蔵庫にある食材
+                  </H3>
                   <Stack gap="xs">
                     {fridgeItemsWithMismatchedUnit.map((item) => (
                       <div

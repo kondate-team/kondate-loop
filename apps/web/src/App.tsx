@@ -125,12 +125,24 @@ const getShareViewFromPath = (): { type: "recipe" | "set"; id: string } | null =
   return { type, id: match[2] }
 }
 
+type FridgeItemWithMismatchedUnit = {
+  id: string
+  name: string
+  amount: number
+  unit: string
+}
+
 const buildShoppingItemsFromSet = (
   setItem: { recipeIds?: string[] } | null,
   recipesPool: { id: string; ingredients?: Ingredient[] }[],
-  fridgeList: { name: string; amount: number; unit: string }[]
-) => {
-  if (!setItem?.recipeIds?.length) return []
+  fridgeList: { id?: string; name: string; amount: number; unit: string }[]
+): {
+  shoppingItems: ShoppingItem[]
+  fridgeItemsWithMismatchedUnit: FridgeItemWithMismatchedUnit[]
+} => {
+  if (!setItem?.recipeIds?.length) return { shoppingItems: [], fridgeItemsWithMismatchedUnit: [] }
+
+  // 1. レシピの食材を集計（name-unit をキーに）
   const totals = new Map<string, { name: string; unit: string; amount: number }>()
   setItem.recipeIds.forEach((id) => {
     const recipe = recipesPool.find((item) => item.id === id)
@@ -146,13 +158,40 @@ const buildShoppingItemsFromSet = (
     })
   })
 
+  // 2. 冷蔵庫の食材をマップ化（name-unit をキーに）
   const fridgeMap = new Map<string, number>()
   fridgeList.forEach((item) => {
     const key = `${item.name}-${item.unit}`
     fridgeMap.set(key, (fridgeMap.get(key) ?? 0) + item.amount)
   })
 
-  return Array.from(totals.entries())
+  // 3. 買い物リストに必要な食材名を抽出（nameのみ）
+  const requiredNames = new Set<string>()
+  totals.forEach((value) => requiredNames.add(value.name))
+
+  // 4. 単位不一致の冷蔵庫アイテムを抽出
+  // 条件: 食材名は買い物リストにあるが、name-unitキーが一致しない
+  const fridgeItemsWithMismatchedUnit: FridgeItemWithMismatchedUnit[] = []
+  const matchedFridgeIds = new Set<string>()
+
+  fridgeList.forEach((item) => {
+    const key = `${item.name}-${item.unit}`
+    if (totals.has(key)) {
+      // 単位も一致 → 差し引き対象（matchedとして記録）
+      if (item.id) matchedFridgeIds.add(item.id)
+    } else if (requiredNames.has(item.name)) {
+      // 名前は一致するが単位が異なる → 単位不一致リストに追加
+      fridgeItemsWithMismatchedUnit.push({
+        id: item.id ?? `fridge-${item.name}-${item.unit}`,
+        name: item.name,
+        amount: item.amount,
+        unit: item.unit,
+      })
+    }
+  })
+
+  // 5. 買い物リストを生成（単位一致分を差し引く）
+  const shoppingItems = Array.from(totals.entries())
     .map(([key, value]) => {
       const fridgeAmount = fridgeMap.get(key) ?? 0
       const remaining = value.amount - fridgeAmount
@@ -169,6 +208,8 @@ const buildShoppingItemsFromSet = (
         : null
     })
     .filter((item): item is ShoppingItem => item !== null)
+
+  return { shoppingItems, fridgeItemsWithMismatchedUnit }
 }
 
 export default function App() {
@@ -326,9 +367,16 @@ export default function App() {
       buildShoppingItemsFromSet(setItem, recipePool, fridgeList),
     [recipePool]
   )
-  const [shoppingItems, setShoppingItems] = React.useState<ShoppingItem[]>(() =>
-    buildShoppingItemsFromSet(mockSets[0] ?? null, mockRecipes, mockFridgeItems)
+  const initialShoppingData = React.useMemo(
+    () => buildShoppingItemsFromSet(mockSets[0] ?? null, mockRecipes, mockFridgeItems),
+    []
   )
+  const [shoppingItems, setShoppingItems] = React.useState<ShoppingItem[]>(
+    () => initialShoppingData.shoppingItems
+  )
+  const [fridgeItemsWithMismatchedUnit, setFridgeItemsWithMismatchedUnit] = React.useState<
+    FridgeItemWithMismatchedUnit[]
+  >(() => initialShoppingData.fridgeItemsWithMismatchedUnit)
 
   const navigate = React.useCallback((next: ScreenKey, reset = false) => {
     if (reset) {
@@ -1231,7 +1279,10 @@ export default function App() {
   const applySelectedSet = () => {
     if (!selectedSet) return
     setCurrentSet(selectedSet)
-    setShoppingItems(buildShoppingItems(selectedSet, fridgeItems))
+    const { shoppingItems: newItems, fridgeItemsWithMismatchedUnit: newMismatch } =
+      buildShoppingItems(selectedSet, fridgeItems)
+    setShoppingItems(newItems)
+    setFridgeItemsWithMismatchedUnit(newMismatch)
     closeSet()
     navigate("kondate", true)
   }
@@ -1352,7 +1403,10 @@ export default function App() {
           unit: entry.unit,
         })),
       ]
-      setShoppingItems([...buildShoppingItems(currentSet, nextFridge), ...remainingExtras])
+      const { shoppingItems: newItems, fridgeItemsWithMismatchedUnit: newMismatch } =
+        buildShoppingItems(currentSet, nextFridge)
+      setShoppingItems([...newItems, ...remainingExtras])
+      setFridgeItemsWithMismatchedUnit(newMismatch)
       return nextFridge
     })
     setShoppingOpen(false)
@@ -1364,10 +1418,14 @@ export default function App() {
     if (nextSet) {
       setCurrentSet(nextSet)
       setNextSet(null)
-      setShoppingItems(buildShoppingItems(nextSet, fridgeItems))
+      const { shoppingItems: newItems, fridgeItemsWithMismatchedUnit: newMismatch } =
+        buildShoppingItems(nextSet, fridgeItems)
+      setShoppingItems(newItems)
+      setFridgeItemsWithMismatchedUnit(newMismatch)
     } else {
       setCurrentSet(null)
       setShoppingItems([])
+      setFridgeItemsWithMismatchedUnit([])
     }
     setCookedIds(new Set())
   }, [buildShoppingItems, fridgeItems, nextSet])
@@ -1376,7 +1434,10 @@ export default function App() {
     setFridgeItems((prev) => {
       const next = [...prev, { id: `f-${Date.now()}`, name, amount, unit }]
       const extras = shoppingItems.filter((entry) => entry.isExtra)
-      setShoppingItems([...buildShoppingItems(currentSet, next), ...extras])
+      const { shoppingItems: newItems, fridgeItemsWithMismatchedUnit: newMismatch } =
+        buildShoppingItems(currentSet, next)
+      setShoppingItems([...newItems, ...extras])
+      setFridgeItemsWithMismatchedUnit(newMismatch)
       return next
     })
   }
@@ -1410,10 +1471,13 @@ export default function App() {
         { ...item, deletedAt: new Date().toISOString() },
         ...history,
       ])
+      const { shoppingItems: newItems, fridgeItemsWithMismatchedUnit: newMismatch } =
+        buildShoppingItems(currentSet, next)
       setShoppingItems((current) => {
         const extras = current.filter((entry) => entry.isExtra)
-        return [...buildShoppingItems(currentSet, next), ...extras]
+        return [...newItems, ...extras]
       })
+      setFridgeItemsWithMismatchedUnit(newMismatch)
       return next
     })
   }
@@ -1439,7 +1503,10 @@ export default function App() {
     } else {
       setCurrentSet(setItem)
       setCookedIds(new Set())
-      setShoppingItems(buildShoppingItems(setItem, fridgeItems))
+      const { shoppingItems: newItems, fridgeItemsWithMismatchedUnit: newMismatch } =
+        buildShoppingItems(setItem, fridgeItems)
+      setShoppingItems(newItems)
+      setFridgeItemsWithMismatchedUnit(newMismatch)
     }
     setToastMessage(toast)
     navigate("kondate", true)
@@ -1825,6 +1892,7 @@ export default function App() {
         open={shoppingOpen}
         onClose={() => setShoppingOpen(false)}
         items={shoppingItems}
+        fridgeItemsWithMismatchedUnit={fridgeItemsWithMismatchedUnit}
         onToggle={handlePurchaseItem}
         onConfirm={handleConfirmPurchase}
         onAddExtra={handleAddExtraItem}
