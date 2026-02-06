@@ -153,6 +153,22 @@ kondate-loop/
 - UIルール: `apps/web/UI_RULES.md`
 - 初期リリース要件: `apps/web/INITIAL_RELEASE_REQUIREMENTS.md`
 
+## インフラ参照（必須）
+
+**提案・確認の前に必ず `infra/aws-resources/` のテンプレートを参照すること。**
+
+| ファイル | 内容 |
+|---------|------|
+| `kondate-loop-infra-stack.yaml` | CloudFront + S3（静的配信） |
+| `kondate-loop-backend-stack.yaml` | API Gateway + Lambda + DynamoDB |
+| `kondate-loop-iam-*.yaml` | IAMロール関連 |
+| `PROD/` | 本番環境用テンプレート |
+
+### 確定している方針
+- **Amplify SDKは使わない** - Cognito + 自前コードで認証
+- インフラ基本構成（CloudFront + S3）は池田さんが決定
+- 認証はCognito Hosted UI + API Gateway Cognito Authorizer
+
 ## チェックリスト（作業完了前に確認）
 
 - [ ] Issueを作成した
