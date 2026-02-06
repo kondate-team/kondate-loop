@@ -1,5 +1,7 @@
 import * as React from "react"
 
+import { Refrigerator } from "lucide-react"
+
 import { Surface } from "@/components/primitives/Surface"
 import { Stack, Cluster } from "@/components/primitives/Stack"
 import { H2, H3 } from "@/components/primitives/Typography"
@@ -17,6 +19,13 @@ interface ShoppingModalProps {
     isExtra?: boolean
     checked?: boolean
   }[]
+  /** 冷蔵庫にあるが単位が異なる食材（参考表示用） */
+  fridgeItemsWithMismatchedUnit?: {
+    id: string
+    name: string
+    amount: number
+    unit: string
+  }[]
   onToggle: (id: string) => void
   onConfirm: () => void
   onAddExtra: (name: string, amount: number, unit: string) => void
@@ -32,6 +41,7 @@ export function ShoppingModal({
   open,
   onClose,
   items,
+  fridgeItemsWithMismatchedUnit = [],
   onToggle,
   onConfirm,
   onAddExtra,
@@ -178,6 +188,33 @@ export function ShoppingModal({
                 </div>
               </Stack>
             </Surface>
+
+            {fridgeItemsWithMismatchedUnit.length > 0 && (
+              <Surface tone="section" density="comfy" className="border-transparent">
+                <Stack gap="sm">
+                  <H3 className="flex items-center gap-1.5 text-base">
+                    <Refrigerator className="h-4 w-4" />
+                    冷蔵庫にある食材
+                  </H3>
+                  <Stack gap="xs">
+                    {fridgeItemsWithMismatchedUnit.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between rounded-md border border-border/50 bg-card/50 px-3 py-2"
+                      >
+                        <span className="text-sm text-foreground/80">
+                          {item.name}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {item.amount}
+                          {item.unit}
+                        </span>
+                      </div>
+                    ))}
+                  </Stack>
+                </Stack>
+              </Surface>
+            )}
           </Stack>
         </div>
         <div className="border-t border-border px-5 py-4">
