@@ -54,6 +54,7 @@ import {
   PurchaseHistoryScreen,
   PaymentHistoryScreen,
 } from "@/screens/ExtraScreens"
+import { FEATURES } from "@/lib/features"
 
 export type ScreenKey =
   | "auth"
@@ -82,7 +83,12 @@ export type ScreenKey =
   | "purchase"
   | "payment"
 
-const rootScreens: ScreenKey[] = ["kondate", "book", "catalog", "mypage"]
+const rootScreens: ScreenKey[] = [
+  "kondate",
+  "book",
+  ...(FEATURES.CATALOG_ENABLED ? ["catalog" as const] : []),
+  ...(FEATURES.MYPAGE_ENABLED ? ["mypage" as const] : []),
+]
 
 type Ingredient = { name: string; amount: number; unit: string }
 type ShoppingItem = {
