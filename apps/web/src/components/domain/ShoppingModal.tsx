@@ -17,6 +17,13 @@ interface ShoppingModalProps {
     isExtra?: boolean
     checked?: boolean
   }[]
+  /** 冷蔵庫にあるが単位が異なる食材（参考表示用） */
+  fridgeItemsWithMismatchedUnit?: {
+    id: string
+    name: string
+    amount: number
+    unit: string
+  }[]
   onToggle: (id: string) => void
   onConfirm: () => void
   onAddExtra: (name: string, amount: number, unit: string) => void
@@ -32,6 +39,7 @@ export function ShoppingModal({
   open,
   onClose,
   items,
+  fridgeItemsWithMismatchedUnit = [],
   onToggle,
   onConfirm,
   onAddExtra,
@@ -178,6 +186,33 @@ export function ShoppingModal({
                 </div>
               </Stack>
             </Surface>
+
+            {fridgeItemsWithMismatchedUnit.length > 0 && (
+              <Surface tone="section" density="comfy" className="border-transparent">
+                <Stack gap="sm">
+                  <H3 className="text-base">🧊 冷蔵庫にある食材</H3>
+                  <p className="text-xs text-muted-foreground">
+                    単位が異なるため自動で差し引けませんでした
+                  </p>
+                  <Stack gap="xs">
+                    {fridgeItemsWithMismatchedUnit.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between rounded-md border border-border/50 bg-card/50 px-3 py-2"
+                      >
+                        <span className="text-sm text-foreground/80">
+                          {item.name}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {item.amount}
+                          {item.unit}
+                        </span>
+                      </div>
+                    ))}
+                  </Stack>
+                </Stack>
+              </Surface>
+            )}
           </Stack>
         </div>
         <div className="border-t border-border px-5 py-4">
