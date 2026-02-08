@@ -316,6 +316,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - iam:PassRole
+                  - iam:GetRole
                 Resource:
                   - !GetAtt CfnExecutionRoleDev.Arn
       Tags:
@@ -438,6 +439,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - iam:PassRole
+                  - iam:GetRole
                 Resource:
                   - !GetAtt CfnExecutionRoleProd.Arn
       Tags:
