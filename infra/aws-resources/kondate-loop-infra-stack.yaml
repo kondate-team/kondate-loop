@@ -1,8 +1,12 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/awslabs/goformation/master/schema/cloudformation.schema.json
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Minimal infra static  (CloudFront + S3)
+Description: Minimal infra static (CloudFront + S3)
 
 Parameters:
+  SystemId:
+    Type: String
+    Default: 'kondate-loop'
+    Description: SystemId
   CorsAllowOrigin:
     Type: String
     Default: '*'
@@ -15,8 +19,6 @@ Parameters:
       - 'prod'
     Description: Environment
 
-  # ★追加：ArtifactBucketを共有するための入力
-  # prod側スタックでは、ここに既存の共有ArtifactBucket名を渡して「作成しない」ようにします。
   SharedArtifactBucketName:
     Type: String
     Default: ''
@@ -37,7 +39,7 @@ Resources:
   StaticBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub 'kondate-loop-${Env}-s3-web-${AWS::AccountId}-${AWS::Region}'
+      BucketName: !Sub '${SystemId}-${Env}-s3-web-${AWS::AccountId}-${AWS::Region}'
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -47,13 +49,11 @@ Resources:
         - Key: Owner
           Value: yukanagatake
 
-  # ★修正：ArtifactBucketは「共有バケット」を想定し、作成は1回だけにする
   ArtifactBucket:
     Type: AWS::S3::Bucket
     Condition: CreateArtifactBucket
     Properties:
-      # Envを外して「共有バケット名」にします（dev/prodで同じ）
-      BucketName: !Sub 'kondate-loop-infra-s3-artifacts-${AWS::AccountId}-${AWS::Region}'
+      BucketName: !Sub '${SystemId}-infra-s3-artifacts-${AWS::AccountId}-${AWS::Region}'
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -70,6 +70,30 @@ Resources:
           - Id: ExpireOldArtifacts
             Status: Enabled
             ExpirationInDays: 90
+      Tags:
+        - Key: Owner
+          Value: yukanagatake
+
+  BackendCodeBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${SystemId}-${Env}-backend-s3-lambda-code-${AWS::AccountId}-${AWS::Region}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldLambdaCodeVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 90
       Tags:
         - Key: Owner
           Value: yukanagatake
@@ -121,7 +145,7 @@ Resources:
     Type: AWS::CloudFront::CachePolicy
     Properties:
       CachePolicyConfig:
-        Name: !Sub 'kondate-loop-${Env}-cf-cachepolicy-static'
+        Name: !Sub '${SystemId}-${Env}-cf-cachepolicy-static'
         DefaultTTL: 86400
         MaxTTL: 31536000
         MinTTL: 0
@@ -139,13 +163,12 @@ Resources:
     Type: AWS::CloudFront::OriginAccessControl
     Properties:
       OriginAccessControlConfig:
-        Name: !Sub 'kondate-loop-${Env}-cf-oac-static'
+        Name: !Sub '${SystemId}-${Env}-cf-oac-static'
         OriginAccessControlOriginType: s3
         SigningBehavior: always
         SigningProtocol: sigv4
 
 Outputs:
-  # ★修正：ArtifactBucketは「作った場合」と「参照の場合」で出し分け
   ArtifactBucketName:
     Description: Artifact bucket name (shared across env)
     Value: !If
@@ -159,3 +182,15 @@ Outputs:
       - CreateArtifactBucket
       - !GetAtt ArtifactBucket.Arn
       - !Ref SharedArtifactBucketArn
+
+  BackendCodeBucketName:
+    Description: Backend Lambda code bucket name
+    Value: !Ref BackendCodeBucket
+    Export:
+      Name: !Sub '${SystemId}-${Env}-backend-code-bucket-name'
+
+  BackendCodeBucketArn:
+    Description: Backend Lambda code bucket ARN
+    Value: !GetAtt BackendCodeBucket.Arn
+    Export:
+      Name: !Sub '${SystemId}-${Env}-backend-code-bucket-arn'

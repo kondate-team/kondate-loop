@@ -78,6 +78,7 @@ jobs:
             if [ -z "$GITHUB_REPO" ]; then GITHUB_REPO="${REPO_FULL##*/}"; fi
           fi
 
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           DEV_FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET_DEV }}"
           if [ -z "$DEV_FRONTEND_BUCKET" ]; then DEV_FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET }}"; fi
           if [ -z "$DEV_FRONTEND_BUCKET" ]; then DEV_FRONTEND_BUCKET="kondate-loop-dev-s3-web-211669976488-ap-northeast-1"; fi
@@ -85,8 +86,16 @@ jobs:
 
           PROD_FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET_PROD }}"
           if [ -z "$PROD_FRONTEND_BUCKET" ]; then PROD_FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET }}"; fi
-          if [ -z "$PROD_FRONTEND_BUCKET" ]; then PROD_FRONTEND_BUCKET="kondate-prod-s3-web-211669976488-ap-northeast-1"; fi
+          if [ -z "$PROD_FRONTEND_BUCKET" ]; then PROD_FRONTEND_BUCKET="kondate-loop-prod-s3-web-211669976488-ap-northeast-1"; fi
           PROD_FRONTEND_BUCKET="${PROD_FRONTEND_BUCKET#arn:aws:s3:::}"
+
+          DEV_BACKEND_CODE_BUCKET="${{ vars.BACKEND_CODE_BUCKET_DEV }}"
+          if [ -z "$DEV_BACKEND_CODE_BUCKET" ]; then DEV_BACKEND_CODE_BUCKET="kondate-loop-dev-backend-s3-lambda-code-${ACCOUNT_ID}-${AWS_REGION}"; fi
+          DEV_BACKEND_CODE_BUCKET="${DEV_BACKEND_CODE_BUCKET#arn:aws:s3:::}"
+
+          PROD_BACKEND_CODE_BUCKET="${{ vars.BACKEND_CODE_BUCKET_PROD }}"
+          if [ -z "$PROD_BACKEND_CODE_BUCKET" ]; then PROD_BACKEND_CODE_BUCKET="kondate-loop-prod-backend-s3-lambda-code-${ACCOUNT_ID}-${AWS_REGION}"; fi
+          PROD_BACKEND_CODE_BUCKET="${PROD_BACKEND_CODE_BUCKET#arn:aws:s3:::}"
 
           delete_if_rollback() {
             local stack="$1"
@@ -109,8 +118,8 @@ jobs:
             "kondate-loop-iam-github-oidc-stack|infra/aws-resources/kondate-loop-iam-github-oidc-stack.yaml"
             "kondate-loop-iam-LambdaExecutionRole-stack|infra/aws-resources/kondate-loop-iam-LambdaExecutionRole-stack.yaml"
             "kondate-loop-iam-stack|infra/aws-resources/kondate-loop-iam-stack.yaml"
-            "kondate-loop-backend-stack|infra/aws-resources/kondate-loop-backend-stack.yaml"
             "${INFRA_STACK_NAME}|infra/aws-resources/kondate-loop-infra-stack.yaml"
+            "kondate-loop-backend-stack|infra/aws-resources/kondate-loop-backend-stack.yaml"
           )
 
           for entry in "${STACKS[@]}"; do
@@ -125,6 +134,8 @@ jobs:
                   "DevFrontendBucketName=$DEV_FRONTEND_BUCKET"
                   "ProdFrontendBucketName=$PROD_FRONTEND_BUCKET"
                   "ArtifactsBucketName=$ARTIFACT_BUCKET"
+                  "DevBackendCodeBucketName=$DEV_BACKEND_CODE_BUCKET"
+                  "ProdBackendCodeBucketName=$PROD_BACKEND_CODE_BUCKET"
                   "DevStackName=kondate-loop-backend-stack"
                   "ProdStackName=PRODkondate-loop-backend-stack"
                 )
@@ -252,8 +263,8 @@ jobs:
           if [ -n "$EXEC_ROLE_ARN" ]; then ROLE_ARG=(--role-arn "$EXEC_ROLE_ARN"); fi
 
           STACKS=(
-            "PRODkondate-loop-backend-stack|infra/aws-resources/PROD/PRODkondate-loop-backend-stack.yaml"
             "${INFRA_STACK_NAME}|infra/aws-resources/PROD/PRODkondate-loop-infra-stack.yaml"
+            "PRODkondate-loop-backend-stack|infra/aws-resources/PROD/PRODkondate-loop-backend-stack.yaml"
           )
 
           for entry in "${STACKS[@]}"; do
@@ -288,7 +299,7 @@ jobs:
         run: |
           FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET_PROD }}"
           if [ -z "$FRONTEND_BUCKET" ]; then FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET }}"; fi
-          if [ -z "$FRONTEND_BUCKET" ]; then FRONTEND_BUCKET="kondate-prod-s3-web-211669976488-ap-northeast-1"; fi
+          if [ -z "$FRONTEND_BUCKET" ]; then FRONTEND_BUCKET="kondate-loop-prod-s3-web-211669976488-ap-northeast-1"; fi
           FRONTEND_BUCKET="${FRONTEND_BUCKET#arn:aws:s3:::}"
           if [ -z "$FRONTEND_BUCKET" ]; then
             ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)

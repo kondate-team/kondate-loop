@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/awslabs/goformation/master/schema/cloudformation.schema.json
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Minimal backend placeholder (API Gateway + Lambda + DynamoDB)
+Description: Backend stack (API Gateway + Lambda + DynamoDB)
 
 Parameters:
   SystemId:
@@ -14,12 +14,32 @@ Parameters:
       - 'dev'
       - 'prod'
     Description: Environment
+  LambdaCodeS3Key:
+    Type: String
+    Default: ''
+    Description: S3 key for Lambda zip. If empty, inline placeholder is used.
+  LambdaCodeS3ObjectVersion:
+    Type: String
+    Default: ''
+    Description: Optional S3 object version for Lambda zip.
+  LambdaHandler:
+    Type: String
+    Default: index.handler
+    Description: Lambda handler (e.g. index.handler)
+  LambdaRuntime:
+    Type: String
+    Default: nodejs18.x
+    Description: Lambda runtime
+
+Conditions:
+  UseS3Code: !Not [!Equals [!Ref LambdaCodeS3Key, '']]
+  HasCodeVersion: !Not [!Equals [!Ref LambdaCodeS3ObjectVersion, '']]
 
 Resources:
-  RecipesTable:
+  MainTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Sub 'kondate-loop-${Env}-data-ddb-recipes'
+      TableName: !Sub '${SystemId}-${Env}-data-ddb-main'
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: PK
@@ -40,7 +60,7 @@ Resources:
   BackendFunctionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub 'kondate-loop-${Env}-api-role'
+      RoleName: !Sub '${SystemId}-${Env}-api-role'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -64,26 +84,35 @@ Resources:
                   - dynamodb:DeleteItem
                   - dynamodb:Query
                   - dynamodb:Scan
-                Resource: !GetAtt RecipesTable.Arn
+        Resource: !GetAtt MainTable.Arn
 
   BackendFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub 'kondate-loop-${Env}-api-fn-get-recipes'
-      Runtime: nodejs18.x
-      Handler: index.handler
+      FunctionName: !Sub '${SystemId}-${Env}-api-fn-proxy'
+      Runtime: !Ref LambdaRuntime
+      Handler: !Ref LambdaHandler
       Role: !GetAtt BackendFunctionRole.Arn
       Environment:
         Variables:
-          TABLE_NAME: !Ref RecipesTable
+          TABLE_NAME: !Ref MainTable
       Code:
-        ZipFile: |
-          exports.handler = async () => {
-            return {
-              statusCode: 200,
-              body: JSON.stringify({ message: "placeholder" }),
-            };
-          };
+        Fn::If:
+          - UseS3Code
+          - S3Bucket:
+              Fn::ImportValue: !Sub '${SystemId}-${Env}-backend-code-bucket-name'
+            S3Key: !Ref LambdaCodeS3Key
+            S3ObjectVersion: !If
+              - HasCodeVersion
+              - !Ref LambdaCodeS3ObjectVersion
+              - !Ref AWS::NoValue
+          - ZipFile: |
+              exports.handler = async () => {
+                return {
+                  statusCode: 200,
+                  body: JSON.stringify({ message: "placeholder" }),
+                };
+              };
       Tags:
         - Key: Owner
           Value: yukanagatake
@@ -91,7 +120,7 @@ Resources:
   BackendApi:
     Type: AWS::ApiGateway::RestApi
     Properties:
-      Name: !Sub 'kondate-loop-${Env}-api'
+      Name: !Sub '${SystemId}-${Env}-api'
       EndpointConfiguration:
         Types:
           - REGIONAL
@@ -99,19 +128,40 @@ Resources:
         - Key: Owner
           Value: yukanagatake
 
-  RecipesResource:
+  V1Resource:
     Type: AWS::ApiGateway::Resource
     Properties:
       RestApiId: !Ref BackendApi
       ParentId: !GetAtt BackendApi.RootResourceId
-      PathPart: recipes
+      PathPart: v1
 
-  RecipesGetMethod:
+  V1AnyMethod:
     Type: AWS::ApiGateway::Method
     Properties:
       RestApiId: !Ref BackendApi
-      ResourceId: !Ref RecipesResource
-      HttpMethod: GET
+      ResourceId: !Ref V1Resource
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${BackendFunction.Arn}/invocations'
+      MethodResponses:
+        - StatusCode: 200
+
+  ProxyResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref BackendApi
+      ParentId: !Ref V1Resource
+      PathPart: '{proxy+}'
+
+  ProxyAnyMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref BackendApi
+      ResourceId: !Ref ProxyResource
+      HttpMethod: ANY
       AuthorizationType: NONE
       Integration:
         Type: AWS_PROXY
@@ -123,7 +173,8 @@ Resources:
   BackendApiDeployment:
     Type: AWS::ApiGateway::Deployment
     DependsOn:
-      - RecipesGetMethod
+      - V1AnyMethod
+      - ProxyAnyMethod
     Properties:
       RestApiId: !Ref BackendApi
       StageName: !Ref Env
@@ -134,15 +185,23 @@ Resources:
       Action: lambda:InvokeFunction
       FunctionName: !Ref BackendFunction
       Principal: apigateway.amazonaws.com
-      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${BackendApi}/*/GET/recipes'
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${BackendApi}/*/*/v1/*'
+
+  BackendFunctionPermissionV1:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref BackendFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${BackendApi}/*/*/v1'
 
 Outputs:
   BackendApiEndpoint:
     Description: API endpoint base URL
-    Value: !Sub 'https://${BackendApi}.execute-api.${AWS::Region}.amazonaws.com/${Env}'
-  RecipesTableName:
-    Description: DynamoDB table for recipes
-    Value: !Ref RecipesTable
+    Value: !Sub 'https://${BackendApi}.execute-api.${AWS::Region}.amazonaws.com/${Env}/v1'
+  MainTableName:
+    Description: DynamoDB main table
+    Value: !Ref MainTable
   BackendFunctionArn:
     Description: Lambda function ARN
     Value: !GetAtt BackendFunction.Arn

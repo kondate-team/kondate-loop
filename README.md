@@ -118,7 +118,7 @@ npm run dev
 - CloudFormation (dev) templates: `infra/aws-resources/kondate-loop-iam-github-oidc-stack.yaml`, `infra/aws-resources/kondate-loop-iam-LambdaExecutionRole-stack.yaml`, `infra/aws-resources/kondate-loop-iam-stack.yaml`, `infra/aws-resources/kondate-loop-backend-stack.yaml`, `infra/aws-resources/kondate-loop-infra-stack.yaml`.
 - CloudFormation (prod) templates: `infra/aws-resources/PROD/PRODkondate-loop-backend-stack.yaml`, `infra/aws-resources/PROD/PRODkondate-loop-infra-stack.yaml`.
 - `kondate-loop-iam-stack.yaml` (dev) requires `DEVELOPER_PRINCIPAL_ARN` (secret or var); if unset, the workflow skips that stack.
-- Default buckets (if vars unset): dev frontend `kondate-loop-dev-s3-web-211669976488-ap-northeast-1`, prod frontend `kondate-prod-s3-web-211669976488-ap-northeast-1`, artifacts `kondate-loop-infra-s3-artifacts-211669976488-ap-northeast-1`.
+- Default buckets (if vars unset): dev frontend `kondate-loop-dev-s3-web-211669976488-ap-northeast-1`, prod frontend `kondate-loop-prod-s3-web-211669976488-ap-northeast-1`, artifacts `kondate-loop-infra-s3-artifacts-211669976488-ap-northeast-1`.
 - Manual run (dev only): Actions -> Deploy -> Run workflow, set branch `dev`,
   set `allow_stack_delete=true` to delete a `ROLLBACK_COMPLETE` stack and recreate.
 - Secrets/Vars are read from repo/org (environment secrets are not used).

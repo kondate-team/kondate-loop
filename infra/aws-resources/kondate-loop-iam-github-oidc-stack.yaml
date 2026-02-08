@@ -27,6 +27,14 @@ Parameters:
     Type: String
     Default: kondate-loop-infra-s3-artifacts-211669976488-ap-northeast-1
     Description: S3 bucket for build artifacts
+  DevBackendCodeBucketName:
+    Type: String
+    Default: kondate-loop-dev-backend-s3-lambda-code-211669976488-ap-northeast-1
+    Description: S3 bucket for dev backend Lambda code packages
+  ProdBackendCodeBucketName:
+    Type: String
+    Default: kondate-loop-prod-backend-s3-lambda-code-211669976488-ap-northeast-1
+    Description: S3 bucket for prod backend Lambda code packages
   DevStackName:
     Type: String
     Default: kondate-loop-backend-stack
@@ -224,6 +232,8 @@ Resources:
                   - !Sub 'arn:aws:s3:::${DevFrontendBucketName}'
                   - !Sub 'arn:aws:s3:::${ProdFrontendBucketName}'
                   - !Sub 'arn:aws:s3:::${ArtifactsBucketName}'
+                  - !Sub 'arn:aws:s3:::${DevBackendCodeBucketName}'
+                  - !Sub 'arn:aws:s3:::${ProdBackendCodeBucketName}'
               - Effect: Allow
                 Action:
                   - s3:GetObject
@@ -233,6 +243,8 @@ Resources:
                   - !Sub 'arn:aws:s3:::${DevFrontendBucketName}/*'
                   - !Sub 'arn:aws:s3:::${ProdFrontendBucketName}/*'
                   - !Sub 'arn:aws:s3:::${ArtifactsBucketName}/*'
+                  - !Sub 'arn:aws:s3:::${DevBackendCodeBucketName}/*'
+                  - !Sub 'arn:aws:s3:::${ProdBackendCodeBucketName}/*'
         - PolicyName: CloudFormationDeploy
           PolicyDocument:
             Version: '2012-10-17'
@@ -342,6 +354,8 @@ Resources:
                   - !Sub 'arn:aws:s3:::${DevFrontendBucketName}'
                   - !Sub 'arn:aws:s3:::${ProdFrontendBucketName}'
                   - !Sub 'arn:aws:s3:::${ArtifactsBucketName}'
+                  - !Sub 'arn:aws:s3:::${DevBackendCodeBucketName}'
+                  - !Sub 'arn:aws:s3:::${ProdBackendCodeBucketName}'
               - Effect: Allow
                 Action:
                   - s3:GetObject
@@ -351,6 +365,8 @@ Resources:
                   - !Sub 'arn:aws:s3:::${DevFrontendBucketName}/*'
                   - !Sub 'arn:aws:s3:::${ProdFrontendBucketName}/*'
                   - !Sub 'arn:aws:s3:::${ArtifactsBucketName}/*'
+                  - !Sub 'arn:aws:s3:::${DevBackendCodeBucketName}/*'
+                  - !Sub 'arn:aws:s3:::${ProdBackendCodeBucketName}/*'
         - PolicyName: CloudFormationDeploy
           PolicyDocument:
             Version: '2012-10-17'
