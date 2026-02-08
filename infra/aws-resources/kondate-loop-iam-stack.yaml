@@ -8,8 +8,8 @@ Parameters:
 
   App:
     Type: String
-    Default: kondate
-    Description: e.g. kondate
+    Default: kondate-loop
+    Description: e.g. kondate-loop
   Env:
     Type: String
     Description: e.g. dev

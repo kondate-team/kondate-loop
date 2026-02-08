@@ -9,7 +9,7 @@ Parameters:
     Description: SystemId
   Env:
     Type: String
-    Default: 'dev'
+    Default: 'prod'
     AllowedValues:
       - 'dev'
       - 'prod'

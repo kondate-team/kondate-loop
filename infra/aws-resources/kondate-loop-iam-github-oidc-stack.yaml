@@ -17,23 +17,23 @@ Parameters:
     Description: GitHub repository name
   DevFrontendBucketName:
     Type: String
-    Default: kondate-dev-s3-web-211669976488-ap-northeast-1
+    Default: kondate-loop-dev-s3-web-211669976488-ap-northeast-1
     Description: S3 bucket for dev frontend assets
   ProdFrontendBucketName:
     Type: String
-    Default: kondate-prod-s3-web-211669976488-ap-northeast-1
+    Default: kondate-loop-prod-s3-web-211669976488-ap-northeast-1
     Description: S3 bucket for prod frontend assets
   ArtifactsBucketName:
     Type: String
-    Default: kondate-infra-s3-artifacts-211669976488-ap-northeast-1
+    Default: kondate-loop-infra-s3-artifacts-211669976488-ap-northeast-1
     Description: S3 bucket for build artifacts
   DevStackName:
     Type: String
-    Default: kondate-backend-stack
+    Default: kondate-loop-backend-stack
     Description: CloudFormation stack name for dev
   ProdStackName:
     Type: String
-    Default: PRODkondate-backend-stack
+    Default: PRODkondate-loop-backend-stack
     Description: CloudFormation stack name for prod
   CfnExecutionRoleDevManagedPolicyArn:
     Type: String
@@ -115,7 +115,7 @@ Resources:
                   - s3:PutBucketPublicAccessBlock
                   - s3:GetBucketPublicAccessBlock
                 Resource:
-                  - !Sub 'arn:aws:s3:::kondate-*-s3-web-*'
+                  - !Sub 'arn:aws:s3:::kondate-loop-*-s3-web-*'
       Tags:
         - Key: Owner
           Value: yukanagatake
@@ -177,7 +177,7 @@ Resources:
                   - s3:PutBucketPublicAccessBlock
                   - s3:GetBucketPublicAccessBlock
                 Resource:
-                  - !Sub 'arn:aws:s3:::kondate-*-s3-web-*'
+                  - !Sub 'arn:aws:s3:::kondate-loop-*-s3-web-*'
       Tags:
         - Key: Owner
           Value: yukanagatake
@@ -296,7 +296,7 @@ Resources:
                   - s3:PutBucketPublicAccessBlock
                   - s3:GetBucketPublicAccessBlock
                 Resource:
-                  - !Sub 'arn:aws:s3:::kondate-*-s3-web-*'
+                  - !Sub 'arn:aws:s3:::kondate-loop-*-s3-web-*'
         - PolicyName: PassCfnExecutionRole
           PolicyDocument:
             Version: '2012-10-17'
@@ -414,7 +414,7 @@ Resources:
                   - s3:PutBucketPublicAccessBlock
                   - s3:GetBucketPublicAccessBlock
                 Resource:
-                  - !Sub 'arn:aws:s3:::kondate-*-s3-web-*'
+                  - !Sub 'arn:aws:s3:::kondate-loop-*-s3-web-*'
         - PolicyName: PassCfnExecutionRole
           PolicyDocument:
             Version: '2012-10-17'
