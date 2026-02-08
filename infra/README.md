@@ -6,6 +6,13 @@ AWS / CloudFormation のインフラ賁E��向け README、E
 
 - SystemId parameter default must be 'kondate-loop' in CloudFormation templates.
 
+## Templates
+
+- Dev templates: aws-resources/kondate-loop-iam-github-oidc-stack.yaml, aws-resources/kondate-loop-iam-LambdaExecutionRole-stack.yaml, aws-resources/kondate-loop-iam-stack.yaml, aws-resources/kondate-loop-backend-stack.yaml, aws-resources/kondate-loop-infra-stack.yaml.
+- Prod templates: aws-resources/PROD/PRODkondate-loop-backend-stack.yaml, aws-resources/PROD/PRODkondate-loop-infra-stack.yaml.
+- Default buckets (if vars unset): dev frontend kondate-loop-dev-s3-web-211669976488-ap-northeast-1, prod frontend kondate-prod-s3-web-211669976488-ap-northeast-1, artifacts kondate-loop-infra-s3-artifacts-211669976488-ap-northeast-1.
+- Backend stack names: dev kondate-loop-backend-stack, prod PRODkondate-loop-backend-stack.
+
 ## リソース別の“現実的な命名”侁E
 
 ### 1) S3バケチE���E�ここだけ特別扱ぁE��奨�E�E
@@ -83,4 +90,8 @@ DynamoDBのチE�Eブル名�E 3、E55斁E��で、英数字�Eアンダースコ�
 
 - `kondate-prod-data-ddb-menus`
 - `kondate-prod-data-ddb-users`
+
+
+
+
 
