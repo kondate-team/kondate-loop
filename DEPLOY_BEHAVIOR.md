@@ -58,3 +58,13 @@
   - dev: `DDB_ENABLE_GSI1_DEV`, `DDB_ENABLE_GSI2_DEV`, `DDB_ENABLE_GSI3_DEV`
   - prod: `DDB_ENABLE_GSI1_PROD`, `DDB_ENABLE_GSI2_PROD`, `DDB_ENABLE_GSI3_PROD`
 - Enable indexes one by one across separate deploys.
+
+## Backend runtime and verification update (2026-02-09)
+- Backend Lambda now runs deployed API code from S3 package (not placeholder code).
+- `kondate-loop-backend-stack` template sets `DATA_STORE_DRIVER=dynamo` and `TABLE_NAME` in Lambda env.
+- Deploy workflow (`backend-dev`) now:
+  1) builds `apps/api`
+  2) packages lambda artifact (`dist + node_modules + package.json`)
+  3) uploads to backend code bucket
+  4) deploys with `LambdaCodeS3Key` and `LambdaHandler=dist/lambda.handler`
+  5) runs smoke test: `POST /recipes` and verifies DynamoDB item exists.

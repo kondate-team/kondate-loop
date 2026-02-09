@@ -166,3 +166,13 @@
   - Dev: `DDB_ENABLE_GSI1_DEV`, `DDB_ENABLE_GSI2_DEV`, `DDB_ENABLE_GSI3_DEV`
   - Prod: `DDB_ENABLE_GSI1_PROD`, `DDB_ENABLE_GSI2_PROD`, `DDB_ENABLE_GSI3_PROD`
 - Rollout order: 1) GSI1 only -> 2) enable GSI2 -> 3) enable GSI3 (one change per deploy).
+
+## 11. API runtime wiring (2026-02-09)
+- Lambda environment now sets `DATA_STORE_DRIVER=dynamo` to force DynamoDB repository.
+- Added `apps/api/src/lambda.ts` with `serverless-http` handler.
+- Deploy workflow uploads built API artifact and passes:
+  - `LambdaCodeS3Key=backend/<sha>/backend-lambda.zip`
+  - `LambdaHandler=dist/lambda.handler`
+- Post-deploy smoke now confirms API write path:
+  - `POST /recipes` -> response `data.id`
+  - DynamoDB `GetItem` by `PK=USER#...`, `SK=RECIPE#...`

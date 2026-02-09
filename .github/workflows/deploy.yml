@@ -41,6 +41,31 @@ jobs:
       - name: Verify caller
         run: aws sts get-caller-identity
 
+      - name: Build and upload backend lambda (dev)
+        run: |
+          set -euo pipefail
+          npm ci --include=optional
+          npm run build --workspace=apps/api
+
+          rm -rf .artifacts/backend
+          mkdir -p .artifacts/backend
+          cp -r apps/api/dist .artifacts/backend/dist
+          cp apps/api/package.json .artifacts/backend/package.json
+
+          pushd .artifacts/backend >/dev/null
+          npm install --omit=dev --ignore-scripts
+          zip -qr backend-lambda.zip dist node_modules package.json
+          popd >/dev/null
+
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          DEV_BACKEND_CODE_BUCKET="${{ vars.BACKEND_CODE_BUCKET_DEV }}"
+          if [ -z "$DEV_BACKEND_CODE_BUCKET" ]; then DEV_BACKEND_CODE_BUCKET="kondate-loop-dev-s3-lambda-code-${ACCOUNT_ID}-${AWS_REGION}"; fi
+          DEV_BACKEND_CODE_BUCKET="${DEV_BACKEND_CODE_BUCKET#arn:aws:s3:::}"
+
+          LAMBDA_CODE_S3_KEY="backend/${GITHUB_SHA}/backend-lambda.zip"
+          aws s3 cp .artifacts/backend/backend-lambda.zip "s3://${DEV_BACKEND_CODE_BUCKET}/${LAMBDA_CODE_S3_KEY}"
+          echo "LAMBDA_CODE_S3_KEY=$LAMBDA_CODE_S3_KEY" >> "$GITHUB_ENV"
+
       - name: Deploy CloudFormation (dev)
         run: |
           ENV_NAME=dev
@@ -161,6 +186,8 @@ jobs:
                   "EnableGSI1=$ENABLE_GSI1"
                   "EnableGSI2=$ENABLE_GSI2"
                   "EnableGSI3=$ENABLE_GSI3"
+                  "LambdaCodeS3Key=${LAMBDA_CODE_S3_KEY}"
+                  "LambdaHandler=dist/lambda.handler"
                 )
                 ;;
               *)
@@ -202,6 +229,47 @@ jobs:
               --capabilities CAPABILITY_NAMED_IAM \
               "${PARAM_ARGS[@]}"
           done
+
+      - name: Smoke test backend API -> DynamoDB (dev)
+        run: |
+          set -euo pipefail
+          API_BASE=$(aws cloudformation describe-stacks \
+            --stack-name "kondate-loop-backend-stack" \
+            --query "Stacks[0].Outputs[?OutputKey=='BackendApiEndpoint'].OutputValue" \
+            --output text)
+          TABLE_NAME=$(aws cloudformation describe-stacks \
+            --stack-name "kondate-loop-backend-stack" \
+            --query "Stacks[0].Outputs[?OutputKey=='MainTableName'].OutputValue" \
+            --output text)
+
+          TEST_USER_ID="gha-smoke-${GITHUB_RUN_ID}"
+          TEST_TITLE="GHA Smoke ${GITHUB_SHA::7}"
+
+          RESPONSE=$(curl -sS -X POST "${API_BASE}/recipes" \
+            -H "content-type: application/json" \
+            -d "{\"userId\":\"${TEST_USER_ID}\",\"title\":\"${TEST_TITLE}\",\"servings\":2}")
+          echo "API response: ${RESPONSE}"
+
+          RECIPE_ID=$(python -c "import sys,json; print((json.load(sys.stdin).get('data') or {}).get('id',''))" <<< "${RESPONSE}")
+          if [ -z "${RECIPE_ID}" ]; then
+            echo "Recipe ID not returned from API." >&2
+            exit 1
+          fi
+
+          PK="USER#${TEST_USER_ID}"
+          SK="RECIPE#${RECIPE_ID}"
+          ITEM_PK=$(aws dynamodb get-item \
+            --table-name "${TABLE_NAME}" \
+            --consistent-read \
+            --key "{\"PK\":{\"S\":\"${PK}\"},\"SK\":{\"S\":\"${SK}\"}}" \
+            --query "Item.PK.S" \
+            --output text)
+
+          if [ "${ITEM_PK}" != "${PK}" ]; then
+            echo "DynamoDB verification failed. expected PK=${PK}, actual=${ITEM_PK}" >&2
+            exit 1
+          fi
+          echo "Smoke test passed: ${PK} / ${SK}"
 
   frontend-dev:
     if: github.ref == 'refs/heads/dev'

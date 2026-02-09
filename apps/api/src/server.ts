@@ -10,8 +10,10 @@ dotenv.config();
 const PORT = Number(process.env.PORT ?? 4242);
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? "http://localhost:5173";
 
-const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
-if (!STRIPE_SECRET_KEY) throw new Error("Missing STRIPE_SECRET_KEY in .env");
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY ?? "sk_test_dummy";
+if (!process.env.STRIPE_SECRET_KEY) {
+  console.warn("STRIPE_SECRET_KEY is not set. Stripe endpoints will fail until configured.");
+}
 
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET ?? "";
 const STRIPE_PRICE_ID_USER_PLUS = process.env.STRIPE_PRICE_ID_USER_PLUS ?? "";
@@ -21,7 +23,7 @@ const PLATFORM_FEE_PERCENT = Number(process.env.PLATFORM_FEE_PERCENT ?? 10);
 
 const stripe = new Stripe(STRIPE_SECRET_KEY);
 const store = createDataStore();
-const app = express();
+export const app = express();
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -806,13 +808,15 @@ app.get("/v1/users/:userId", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`\n========================================`);
-  console.log(`  Kondate Loop API`);
-  console.log(`========================================`);
-  console.log(`  Server:   http://localhost:${PORT}`);
-  console.log(`  Health:   http://localhost:${PORT}/health`);
-  console.log(`  Webhook:  POST http://localhost:${PORT}/webhooks/stripe`);
-  console.log(`  Driver:   ${(process.env.DATA_STORE_DRIVER ?? "file").toLowerCase()}`);
-  console.log(`========================================\n`);
-});
+if (!process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  app.listen(PORT, () => {
+    console.log(`\n========================================`);
+    console.log(`  Kondate Loop API`);
+    console.log(`========================================`);
+    console.log(`  Server:   http://localhost:${PORT}`);
+    console.log(`  Health:   http://localhost:${PORT}/health`);
+    console.log(`  Webhook:  POST http://localhost:${PORT}/webhooks/stripe`);
+    console.log(`  Driver:   ${(process.env.DATA_STORE_DRIVER ?? "file").toLowerCase()}`);
+    console.log(`========================================\n`);
+  });
+}

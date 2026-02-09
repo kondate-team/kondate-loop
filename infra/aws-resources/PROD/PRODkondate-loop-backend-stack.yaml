@@ -186,6 +186,7 @@ Resources:
       Environment:
         Variables:
           TABLE_NAME: !Ref MainTable
+          DATA_STORE_DRIVER: dynamo
       Code:
         Fn::If:
           - UseS3Code
