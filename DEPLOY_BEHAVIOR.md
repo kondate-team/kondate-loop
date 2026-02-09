@@ -71,3 +71,4 @@
 - Backend code bucket fallback name updated to `kondate-loop-<env>-s3-lcode-<accountId>-<region>` (was `...-lambda-code-...`).
 - Lambda code upload target now falls back to CloudFormation artifacts bucket to avoid backend-code bucket IAM gaps.
 - Backend stack deploy passes `LambdaCodeS3Bucket` + `LambdaCodeS3Key` explicitly.
+- Feature branch deploy now updates `kondate-loop-iam-github-oidc-stack` before backend stack to keep GitHub OIDC role permissions aligned with backend smoke checks.
