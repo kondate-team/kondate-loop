@@ -23,7 +23,14 @@ import {
   recipeDetailMock,
   recipeSetDetailMock,
 } from "@/data/mockData"
+import { API_USE_MOCK } from "@/api/config"
 import { purchaseContent, registerPaymentMethod } from "@/api/payment"
+import {
+  listCatalogRecipes,
+  listCatalogSets,
+  listRecipeBookRecipes,
+  listRecipeBookSets,
+} from "@/services"
 import { StripeCardInput } from "@/components/StripeCardInput"
 import { Loader2 } from "lucide-react"
 import type { Recipe as ApiRecipe, RecipeSet as ApiRecipeSet, StatusBadge } from "@/types/api"
@@ -396,6 +403,39 @@ export default function App() {
     setShareView({ type, id })
     navigate(type === "recipe" ? "share-recipe" : "share-set", true)
   }, [navigate])
+
+  React.useEffect(() => {
+    if (API_USE_MOCK) return
+    let cancelled = false
+
+    const loadInitialData = async () => {
+      try {
+        const [bookRecipes, bookSets, catalogRecipes, catalogSets] = await Promise.all([
+          listRecipeBookRecipes(),
+          listRecipeBookSets(),
+          listCatalogRecipes(),
+          listCatalogSets(),
+        ])
+
+        if (cancelled) return
+        setMyRecipes(bookRecipes)
+        setMySets(bookSets)
+        setPublicRecipes(catalogRecipes)
+        setPublicSets(catalogSets)
+        setCurrentSet(bookSets[0] ?? null)
+        setNextSet(bookSets[1] ?? null)
+      } catch (error: unknown) {
+        if (cancelled) return
+        console.error("Failed to load initial API data", error)
+        setToastMessage("API data load failed")
+      }
+    }
+
+    void loadInitialData()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const completeLogin = (firstTime?: boolean) => {
     setIsAuthenticated(true)
