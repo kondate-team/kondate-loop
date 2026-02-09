@@ -84,7 +84,7 @@ Resources:
                   - dynamodb:DeleteItem
                   - dynamodb:Query
                   - dynamodb:Scan
-        Resource: !GetAtt MainTable.Arn
+                Resource: !GetAtt MainTable.Arn
 
   BackendFunction:
     Type: AWS::Lambda::Function
