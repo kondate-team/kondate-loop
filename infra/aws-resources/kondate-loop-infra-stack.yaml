@@ -77,7 +77,7 @@ Resources:
   BackendCodeBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub '${SystemId}-${Env}-s3-lambda-code-${AWS::AccountId}-${AWS::Region}'
+      BucketName: !Sub '${SystemId}-${Env}-s3-lcode-${AWS::AccountId}-${AWS::Region}'
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
