@@ -5,35 +5,38 @@ Description: Backend static  (APIGW + Lambda + DynamoDB) for put recipe
 Parameters:
   SystemId:
     Type: String
-    Default: 'kondate-5036514'
+    Default: 'kondate-loop'
     Description: SystemId
   Env:
     Type: String
-    Default: 'dev'
+    Default: 'prod'
     AllowedValues:
       - 'dev'
       - 'prod'
     Description: Environment
   StageName:
     Type: String
-    Default: dev
+    Default: prod
     Description: API stage name
   TableName:
     Type: String
-    Default: KondateTable
+    Default: KondateTableProd
     Description: DynamoDB table name
   FunctionName:
     Type: String
-    Default: KondateCreateRecipe
+    Default: KondateCreateRecipeProd
     Description: Lambda function name
   ListFunctionName:
     Type: String
-    Default: RecipeListRecipes
+    Default: RecipeListRecipesProd
     Description: Lambda function name for list recipes
   PermissionsBoundaryArn:
     Type: String
-    Default: arn:aws:iam::978150176570:policy/PermissionsBoundaryPolicy
-    Description: Permissions boundary to satisfy IAM create role restrictions
+    Default: ''
+    Description: Permissions boundary ARN (optional)
+
+Conditions:
+  HasPermissionsBoundary: !Not [!Equals [!Ref PermissionsBoundaryArn, '']]
 
 Resources:
   RecipeTable:
@@ -61,7 +64,7 @@ Resources:
   LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      PermissionsBoundary: !Ref PermissionsBoundaryArn
+      PermissionsBoundary: !If [HasPermissionsBoundary, !Ref PermissionsBoundaryArn, !Ref AWS::NoValue]
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -91,7 +94,7 @@ Resources:
   ListLambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      PermissionsBoundary: !Ref PermissionsBoundaryArn
+      PermissionsBoundary: !If [HasPermissionsBoundary, !Ref PermissionsBoundaryArn, !Ref AWS::NoValue]
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:

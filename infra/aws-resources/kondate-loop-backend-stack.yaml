@@ -1,0 +1,207 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/awslabs/goformation/master/schema/cloudformation.schema.json
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Backend stack (API Gateway + Lambda + DynamoDB)
+
+Parameters:
+  SystemId:
+    Type: String
+    Default: 'kondate-loop'
+    Description: SystemId
+  Env:
+    Type: String
+    Default: 'dev'
+    AllowedValues:
+      - 'dev'
+      - 'prod'
+    Description: Environment
+  LambdaCodeS3Key:
+    Type: String
+    Default: ''
+    Description: S3 key for Lambda zip. If empty, inline placeholder is used.
+  LambdaCodeS3ObjectVersion:
+    Type: String
+    Default: ''
+    Description: Optional S3 object version for Lambda zip.
+  LambdaHandler:
+    Type: String
+    Default: index.handler
+    Description: Lambda handler (e.g. index.handler)
+  LambdaRuntime:
+    Type: String
+    Default: nodejs18.x
+    Description: Lambda runtime
+
+Conditions:
+  UseS3Code: !Not [!Equals [!Ref LambdaCodeS3Key, '']]
+  HasCodeVersion: !Not [!Equals [!Ref LambdaCodeS3ObjectVersion, '']]
+
+Resources:
+  MainTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${SystemId}-${Env}-data-ddb-main'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Owner
+          Value: yukanagatake
+
+  BackendFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${SystemId}-${Env}-api-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDbAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource: !GetAtt MainTable.Arn
+
+  BackendFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${SystemId}-${Env}-api-fn-proxy'
+      Runtime: !Ref LambdaRuntime
+      Handler: !Ref LambdaHandler
+      Role: !GetAtt BackendFunctionRole.Arn
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref MainTable
+      Code:
+        Fn::If:
+          - UseS3Code
+          - S3Bucket:
+              Fn::ImportValue: !Sub '${SystemId}-${Env}-backend-code-bucket-name'
+            S3Key: !Ref LambdaCodeS3Key
+            S3ObjectVersion: !If
+              - HasCodeVersion
+              - !Ref LambdaCodeS3ObjectVersion
+              - !Ref AWS::NoValue
+          - ZipFile: |
+              exports.handler = async () => {
+                return {
+                  statusCode: 200,
+                  body: JSON.stringify({ message: "placeholder" }),
+                };
+              };
+      Tags:
+        - Key: Owner
+          Value: yukanagatake
+
+  BackendApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub '${SystemId}-${Env}-api'
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Tags:
+        - Key: Owner
+          Value: yukanagatake
+
+  V1Resource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref BackendApi
+      ParentId: !GetAtt BackendApi.RootResourceId
+      PathPart: v1
+
+  V1AnyMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref BackendApi
+      ResourceId: !Ref V1Resource
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${BackendFunction.Arn}/invocations'
+      MethodResponses:
+        - StatusCode: 200
+
+  ProxyResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref BackendApi
+      ParentId: !Ref V1Resource
+      PathPart: '{proxy+}'
+
+  ProxyAnyMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref BackendApi
+      ResourceId: !Ref ProxyResource
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${BackendFunction.Arn}/invocations'
+      MethodResponses:
+        - StatusCode: 200
+
+  BackendApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - V1AnyMethod
+      - ProxyAnyMethod
+    Properties:
+      RestApiId: !Ref BackendApi
+      StageName: !Ref Env
+
+  BackendFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref BackendFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${BackendApi}/*/*/v1/*'
+
+  BackendFunctionPermissionV1:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref BackendFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${BackendApi}/*/*/v1'
+
+Outputs:
+  BackendApiEndpoint:
+    Description: API endpoint base URL
+    Value: !Sub 'https://${BackendApi}.execute-api.${AWS::Region}.amazonaws.com/${Env}/v1'
+  MainTableName:
+    Description: DynamoDB main table
+    Value: !Ref MainTable
+  BackendFunctionArn:
+    Description: Lambda function ARN
+    Value: !GetAtt BackendFunction.Arn

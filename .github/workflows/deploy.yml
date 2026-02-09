@@ -29,6 +29,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Show GITHUB_REF
+        run: echo "GITHUB_REF=$GITHUB_REF"
+
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v5
         with:
@@ -41,9 +44,9 @@ jobs:
       - name: Deploy CloudFormation (dev)
         run: |
           ENV_NAME=dev
-          STACK_NAME="${{ vars.CFN_STACK_NAME_DEV }}"
-          if [ -z "$STACK_NAME" ]; then STACK_NAME="${{ vars.CFN_STACK_NAME }}"; fi
-          if [ -z "$STACK_NAME" ]; then STACK_NAME="kondate-infra-stack-${ENV_NAME}"; fi
+          INFRA_STACK_NAME="${{ vars.CFN_STACK_NAME_DEV }}"
+          if [ -z "$INFRA_STACK_NAME" ]; then INFRA_STACK_NAME="${{ vars.CFN_STACK_NAME }}"; fi
+          if [ -z "$INFRA_STACK_NAME" ]; then INFRA_STACK_NAME="kondate-loop-infra-stack-${ENV_NAME}"; fi
 
           EXEC_ROLE_ARN="${{ secrets.CFN_EXEC_ROLE_ARN_DEV }}"
           if [ -z "$EXEC_ROLE_ARN" ]; then EXEC_ROLE_ARN="${{ vars.CFN_EXEC_ROLE_ARN_DEV }}"; fi
@@ -52,40 +55,12 @@ jobs:
           ARTIFACT_BUCKET="${{ vars.CFN_ARTIFACT_BUCKET_DEV }}"
           if [ -z "$ARTIFACT_BUCKET" ]; then ARTIFACT_BUCKET="${{ vars.CFN_ARTIFACT_BUCKET }}"; fi
           if [ -z "$ARTIFACT_BUCKET" ]; then ARTIFACT_BUCKET="${{ vars.CFN_ARTIFACT_BUCKET_NAME }}"; fi
-          if [ -z "$ARTIFACT_BUCKET" ]; then ARTIFACT_BUCKET="kondate-infra-s3-artifacts-211669976488-ap-northeast-1"; fi
+          if [ -z "$ARTIFACT_BUCKET" ]; then ARTIFACT_BUCKET="kondate-loop-infra-s3-artifacts-211669976488-ap-northeast-1"; fi
           ARTIFACT_BUCKET="${ARTIFACT_BUCKET#arn:aws:s3:::}"
 
-          FRONTEND_BUCKET_RAW="${{ vars.FRONTEND_BUCKET_DEV }}"
-          if [ -z "$FRONTEND_BUCKET_RAW" ]; then FRONTEND_BUCKET_RAW="${{ vars.FRONTEND_BUCKET }}"; fi
-          FRONTEND_BUCKET_RAW="${FRONTEND_BUCKET_RAW#arn:aws:s3:::}"
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          DEFAULT_FRONTEND_BUCKET="kondate-${ENV_NAME}-s3-web-${ACCOUNT_ID}-${AWS_REGION}"
-
-          bucket_exists() {
-            local bucket="$1"
-            local err
-            err=$(aws s3api head-bucket --bucket "$bucket" 2>&1) && return 0
-            if echo "$err" | grep -Eq "Not Found|404"; then return 1; fi
-            return 0
-          }
-
-          FRONTEND_BUCKET_EXISTS=false
-          if [ -n "$FRONTEND_BUCKET_RAW" ]; then
-            if bucket_exists "$FRONTEND_BUCKET_RAW"; then
-              FRONTEND_BUCKET_EXISTS=true
-            else
-              echo "FRONTEND_BUCKET not found: $FRONTEND_BUCKET_RAW" >&2
-              exit 1
-            fi
-          else
-            if bucket_exists "$DEFAULT_FRONTEND_BUCKET"; then
-              FRONTEND_BUCKET_EXISTS=true
-            fi
-          fi
-
-          if [ -z "$STACK_NAME" ] || [ -z "$ARTIFACT_BUCKET" ]; then
+          if [ -z "$INFRA_STACK_NAME" ] || [ -z "$ARTIFACT_BUCKET" ]; then
             echo "Missing CloudFormation config (dev)." >&2
-            echo "STACK_NAME=$STACK_NAME" >&2
+            echo "INFRA_STACK_NAME=$INFRA_STACK_NAME" >&2
             echo "EXEC_ROLE_ARN=$EXEC_ROLE_ARN" >&2
             echo "ARTIFACT_BUCKET=$ARTIFACT_BUCKET" >&2
             exit 1
@@ -93,38 +68,130 @@ jobs:
 
           ROLE_ARG=()
           if [ -n "$EXEC_ROLE_ARN" ]; then ROLE_ARG=(--role-arn "$EXEC_ROLE_ARN"); fi
-          PARAM_OVERRIDES=("Env=$ENV_NAME")
-          if [ "$FRONTEND_BUCKET_EXISTS" = true ]; then
-            if [ -n "$FRONTEND_BUCKET_RAW" ]; then
-              PARAM_OVERRIDES+=("StaticBucketName=$FRONTEND_BUCKET_RAW")
-            else
-              PARAM_OVERRIDES+=("StaticBucketName=$DEFAULT_FRONTEND_BUCKET")
-            fi
-          fi
-          STACK_STATUS=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].StackStatus" --output text 2>/dev/null || true)
-          if [ "$STACK_STATUS" = "ROLLBACK_COMPLETE" ]; then
-            if [ "${ALLOW_STACK_DELETE:-}" = "true" ]; then
-              echo "Stack in ROLLBACK_COMPLETE. Deleting $STACK_NAME..." >&2
-              aws cloudformation delete-stack --stack-name "$STACK_NAME"
-              aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME"
-            else
-              echo "Stack in ROLLBACK_COMPLETE. Set ALLOW_STACK_DELETE=true to delete and recreate." >&2
-              exit 1
-            fi
+          DEVELOPER_PRINCIPAL_ARN="${{ secrets.DEVELOPER_PRINCIPAL_ARN }}"
+          if [ -z "$DEVELOPER_PRINCIPAL_ARN" ]; then DEVELOPER_PRINCIPAL_ARN="${{ vars.DEVELOPER_PRINCIPAL_ARN }}"; fi
+          GITHUB_ORG="${{ vars.GITHUB_ORG }}"
+          GITHUB_REPO="${{ vars.GITHUB_REPO }}"
+          if [ -z "$GITHUB_ORG" ] || [ -z "$GITHUB_REPO" ]; then
+            REPO_FULL="${GITHUB_REPOSITORY:-OWNER/REPO}"
+            if [ -z "$GITHUB_ORG" ]; then GITHUB_ORG="${REPO_FULL%%/*}"; fi
+            if [ -z "$GITHUB_REPO" ]; then GITHUB_REPO="${REPO_FULL##*/}"; fi
           fi
 
-          aws cloudformation deploy \
-            --template-file infra/aws-resources/kondate-infra-stack.yaml \
-            --stack-name "$STACK_NAME" \
-            --s3-bucket "$ARTIFACT_BUCKET" \
-            --no-fail-on-empty-changeset \
-            "${ROLE_ARG[@]}" \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --parameter-overrides "${PARAM_OVERRIDES[@]}"
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          DEV_FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET_DEV }}"
+          if [ -z "$DEV_FRONTEND_BUCKET" ]; then DEV_FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET }}"; fi
+          if [ -z "$DEV_FRONTEND_BUCKET" ]; then DEV_FRONTEND_BUCKET="kondate-loop-dev-s3-web-211669976488-ap-northeast-1"; fi
+          DEV_FRONTEND_BUCKET="${DEV_FRONTEND_BUCKET#arn:aws:s3:::}"
+
+          PROD_FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET_PROD }}"
+          if [ -z "$PROD_FRONTEND_BUCKET" ]; then PROD_FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET }}"; fi
+          if [ -z "$PROD_FRONTEND_BUCKET" ]; then PROD_FRONTEND_BUCKET="kondate-loop-prod-s3-web-211669976488-ap-northeast-1"; fi
+          PROD_FRONTEND_BUCKET="${PROD_FRONTEND_BUCKET#arn:aws:s3:::}"
+
+          DEV_BACKEND_CODE_BUCKET="${{ vars.BACKEND_CODE_BUCKET_DEV }}"
+          if [ -z "$DEV_BACKEND_CODE_BUCKET" ]; then DEV_BACKEND_CODE_BUCKET="kondate-loop-dev-s3-lambda-code-${ACCOUNT_ID}-${AWS_REGION}"; fi
+          DEV_BACKEND_CODE_BUCKET="${DEV_BACKEND_CODE_BUCKET#arn:aws:s3:::}"
+
+          PROD_BACKEND_CODE_BUCKET="${{ vars.BACKEND_CODE_BUCKET_PROD }}"
+          if [ -z "$PROD_BACKEND_CODE_BUCKET" ]; then PROD_BACKEND_CODE_BUCKET="kondate-loop-prod-s3-lambda-code-${ACCOUNT_ID}-${AWS_REGION}"; fi
+          PROD_BACKEND_CODE_BUCKET="${PROD_BACKEND_CODE_BUCKET#arn:aws:s3:::}"
+
+          delete_if_rollback() {
+            local stack="$1"
+            local status
+            status=$(aws cloudformation describe-stacks --stack-name "$stack" --query "Stacks[0].StackStatus" --output text 2>/dev/null || true)
+            if [ "$status" = "ROLLBACK_COMPLETE" ]; then
+              if [ "${ALLOW_STACK_DELETE:-}" = "true" ]; then
+                echo "Stack in ROLLBACK_COMPLETE. Deleting $stack..." >&2
+                aws cloudformation delete-stack --stack-name "$stack"
+                aws cloudformation wait stack-delete-complete --stack-name "$stack"
+              else
+                echo "Stack in ROLLBACK_COMPLETE. Set ALLOW_STACK_DELETE=true to delete and recreate." >&2
+                exit 1
+              fi
+            fi
+          }
+
+          LAMBDA_EXEC_ROLE_ARN=""
+          STACKS=()
+          if [[ "${GITHUB_REF:-}" == refs/heads/feature/* ]]; then
+            echo "Feature branch detected. Deploying dev backend stack only."
+            STACKS=(
+              "kondate-loop-backend-stack|infra/aws-resources/kondate-loop-backend-stack.yaml"
+            )
+          else
+            STACKS=(
+              "kondate-loop-iam-github-oidc-stack|infra/aws-resources/kondate-loop-iam-github-oidc-stack.yaml"
+              "kondate-loop-iam-LambdaExecutionRole-stack|infra/aws-resources/kondate-loop-iam-LambdaExecutionRole-stack.yaml"
+              "kondate-loop-iam-stack|infra/aws-resources/kondate-loop-iam-stack.yaml"
+              "${INFRA_STACK_NAME}|infra/aws-resources/kondate-loop-infra-stack.yaml"
+              "kondate-loop-backend-stack|infra/aws-resources/kondate-loop-backend-stack.yaml"
+            )
+          fi
+
+          for entry in "${STACKS[@]}"; do
+            IFS='|' read -r STACK_NAME TEMPLATE_FILE <<< "$entry"
+
+            PARAM_OVERRIDES=()
+            case "$TEMPLATE_FILE" in
+              *kondate-loop-iam-github-oidc-stack.yaml)
+                PARAM_OVERRIDES=(
+                  "GitHubOrg=$GITHUB_ORG"
+                  "GitHubRepo=$GITHUB_REPO"
+                  "DevFrontendBucketName=$DEV_FRONTEND_BUCKET"
+                  "ProdFrontendBucketName=$PROD_FRONTEND_BUCKET"
+                  "ArtifactsBucketName=$ARTIFACT_BUCKET"
+                  "DevBackendCodeBucketName=$DEV_BACKEND_CODE_BUCKET"
+                  "ProdBackendCodeBucketName=$PROD_BACKEND_CODE_BUCKET"
+                  "DevStackName=kondate-loop-backend-stack"
+                  "ProdStackName=PRODkondate-loop-backend-stack"
+                )
+                ;;
+              *)
+                PARAM_OVERRIDES=("Env=$ENV_NAME")
+                ;;
+            esac
+
+            if [ "$TEMPLATE_FILE" = "infra/aws-resources/kondate-loop-iam-stack.yaml" ]; then
+              if [ -z "$DEVELOPER_PRINCIPAL_ARN" ]; then
+                echo "DEVELOPER_PRINCIPAL_ARN is not set; skipping $STACK_NAME." >&2
+                continue
+              fi
+              if [ -z "$LAMBDA_EXEC_ROLE_ARN" ]; then
+                LAMBDA_EXEC_ROLE_ARN=$(aws cloudformation describe-stacks \
+                  --stack-name "kondate-loop-iam-LambdaExecutionRole-stack" \
+                  --query "Stacks[0].Outputs[?OutputKey=='LambdaExecutionRoleArn'].OutputValue" \
+                  --output text 2>/dev/null || true)
+              fi
+              if [ -z "$LAMBDA_EXEC_ROLE_ARN" ]; then
+                echo "LambdaExecutionRoleArn not found for kondate-loop-iam-LambdaExecutionRole-stack." >&2
+                exit 1
+              fi
+              PARAM_OVERRIDES+=("DeveloperPrincipalArn=$DEVELOPER_PRINCIPAL_ARN" "LambdaExecutionRoleArn=$LAMBDA_EXEC_ROLE_ARN")
+            fi
+
+            delete_if_rollback "$STACK_NAME"
+
+            PARAM_ARGS=()
+            if [ "${#PARAM_OVERRIDES[@]}" -gt 0 ]; then
+              PARAM_ARGS=(--parameter-overrides "${PARAM_OVERRIDES[@]}")
+            fi
+
+            aws cloudformation deploy \
+              --template-file "$TEMPLATE_FILE" \
+              --stack-name "$STACK_NAME" \
+              --s3-bucket "$ARTIFACT_BUCKET" \
+              --no-fail-on-empty-changeset \
+              "${ROLE_ARG[@]}" \
+              --capabilities CAPABILITY_NAMED_IAM \
+              "${PARAM_ARGS[@]}"
+          done
 
   frontend-dev:
     if: github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
+    needs: backend-dev
     concurrency:
       group: deploy-dev
       cancel-in-progress: false
@@ -151,11 +218,13 @@ jobs:
         run: |
           FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET_DEV }}"
           if [ -z "$FRONTEND_BUCKET" ]; then FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET }}"; fi
+          if [ -z "$FRONTEND_BUCKET" ]; then FRONTEND_BUCKET="kondate-loop-dev-s3-web-211669976488-ap-northeast-1"; fi
           FRONTEND_BUCKET="${FRONTEND_BUCKET#arn:aws:s3:::}"
           if [ -z "$FRONTEND_BUCKET" ]; then
             ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-            FRONTEND_BUCKET="kondate-dev-s3-web-${ACCOUNT_ID}-${AWS_REGION}"
+            FRONTEND_BUCKET="kondate-loop-dev-s3-web-${ACCOUNT_ID}-${AWS_REGION}"
           fi
+          echo "FRONTEND_BUCKET=$FRONTEND_BUCKET"
           aws s3 sync apps/web/dist "s3://${FRONTEND_BUCKET}/" --delete
 
   prod:
@@ -170,15 +239,15 @@ jobs:
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v5
         with:
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: ${{ vars.AWS_REGION || 'ap-northeast-1' }}
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
 
       - name: Deploy CloudFormation (prod)
         run: |
           ENV_NAME=prod
-          STACK_NAME="${{ vars.CFN_STACK_NAME_PROD }}"
-          if [ -z "$STACK_NAME" ]; then STACK_NAME="${{ vars.CFN_STACK_NAME }}"; fi
-          if [ -z "$STACK_NAME" ]; then STACK_NAME="kondate-infra-stack-${ENV_NAME}"; fi
+          INFRA_STACK_NAME="${{ vars.CFN_STACK_NAME_PROD }}"
+          if [ -z "$INFRA_STACK_NAME" ]; then INFRA_STACK_NAME="${{ vars.CFN_STACK_NAME }}"; fi
+          if [ -z "$INFRA_STACK_NAME" ]; then INFRA_STACK_NAME="kondate-loop-infra-stack-${ENV_NAME}"; fi
 
           EXEC_ROLE_ARN="${{ secrets.CFN_EXEC_ROLE_ARN_PROD }}"
           if [ -z "$EXEC_ROLE_ARN" ]; then EXEC_ROLE_ARN="${{ vars.CFN_EXEC_ROLE_ARN_PROD }}"; fi
@@ -187,40 +256,12 @@ jobs:
           ARTIFACT_BUCKET="${{ vars.CFN_ARTIFACT_BUCKET_PROD }}"
           if [ -z "$ARTIFACT_BUCKET" ]; then ARTIFACT_BUCKET="${{ vars.CFN_ARTIFACT_BUCKET }}"; fi
           if [ -z "$ARTIFACT_BUCKET" ]; then ARTIFACT_BUCKET="${{ vars.CFN_ARTIFACT_BUCKET_NAME }}"; fi
-          if [ -z "$ARTIFACT_BUCKET" ]; then ARTIFACT_BUCKET="kondate-infra-s3-artifacts-211669976488-ap-northeast-1"; fi
+          if [ -z "$ARTIFACT_BUCKET" ]; then ARTIFACT_BUCKET="kondate-loop-infra-s3-artifacts-211669976488-ap-northeast-1"; fi
           ARTIFACT_BUCKET="${ARTIFACT_BUCKET#arn:aws:s3:::}"
 
-          FRONTEND_BUCKET_RAW="${{ vars.FRONTEND_BUCKET_PROD }}"
-          if [ -z "$FRONTEND_BUCKET_RAW" ]; then FRONTEND_BUCKET_RAW="${{ vars.FRONTEND_BUCKET }}"; fi
-          FRONTEND_BUCKET_RAW="${FRONTEND_BUCKET_RAW#arn:aws:s3:::}"
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          DEFAULT_FRONTEND_BUCKET="kondate-${ENV_NAME}-s3-web-${ACCOUNT_ID}-${AWS_REGION}"
-
-          bucket_exists() {
-            local bucket="$1"
-            local err
-            err=$(aws s3api head-bucket --bucket "$bucket" 2>&1) && return 0
-            if echo "$err" | grep -Eq "Not Found|404"; then return 1; fi
-            return 0
-          }
-
-          FRONTEND_BUCKET_EXISTS=false
-          if [ -n "$FRONTEND_BUCKET_RAW" ]; then
-            if bucket_exists "$FRONTEND_BUCKET_RAW"; then
-              FRONTEND_BUCKET_EXISTS=true
-            else
-              echo "FRONTEND_BUCKET not found: $FRONTEND_BUCKET_RAW" >&2
-              exit 1
-            fi
-          else
-            if bucket_exists "$DEFAULT_FRONTEND_BUCKET"; then
-              FRONTEND_BUCKET_EXISTS=true
-            fi
-          fi
-
-          if [ -z "$STACK_NAME" ] || [ -z "$ARTIFACT_BUCKET" ]; then
+          if [ -z "$INFRA_STACK_NAME" ] || [ -z "$ARTIFACT_BUCKET" ]; then
             echo "Missing CloudFormation config (prod)." >&2
-            echo "STACK_NAME=$STACK_NAME" >&2
+            echo "INFRA_STACK_NAME=$INFRA_STACK_NAME" >&2
             echo "EXEC_ROLE_ARN=$EXEC_ROLE_ARN" >&2
             echo "ARTIFACT_BUCKET=$ARTIFACT_BUCKET" >&2
             exit 1
@@ -228,23 +269,32 @@ jobs:
 
           ROLE_ARG=()
           if [ -n "$EXEC_ROLE_ARN" ]; then ROLE_ARG=(--role-arn "$EXEC_ROLE_ARN"); fi
-          PARAM_OVERRIDES=("Env=$ENV_NAME")
-          if [ "$FRONTEND_BUCKET_EXISTS" = true ]; then
-            if [ -n "$FRONTEND_BUCKET_RAW" ]; then
-              PARAM_OVERRIDES+=("StaticBucketName=$FRONTEND_BUCKET_RAW")
-            else
-              PARAM_OVERRIDES+=("StaticBucketName=$DEFAULT_FRONTEND_BUCKET")
-            fi
-          fi
 
-          aws cloudformation deploy \
-            --template-file infra/aws-resources/kondate-infra-stack.yaml \
-            --stack-name "$STACK_NAME" \
-            --s3-bucket "$ARTIFACT_BUCKET" \
-            --no-fail-on-empty-changeset \
-            "${ROLE_ARG[@]}" \
-            --capabilities CAPABILITY_NAMED_IAM \
-            --parameter-overrides "${PARAM_OVERRIDES[@]}"
+          STACKS=(
+            "${INFRA_STACK_NAME}|infra/aws-resources/PROD/PRODkondate-loop-infra-stack.yaml"
+            "PRODkondate-loop-backend-stack|infra/aws-resources/PROD/PRODkondate-loop-backend-stack.yaml"
+          )
+
+          for entry in "${STACKS[@]}"; do
+            IFS='|' read -r STACK_NAME TEMPLATE_FILE <<< "$entry"
+
+            PARAM_OVERRIDES=("Env=$ENV_NAME")
+            if [ "$TEMPLATE_FILE" = "infra/aws-resources/PROD/PRODkondate-loop-infra-stack.yaml" ]; then
+              PARAM_OVERRIDES+=(
+                "SharedArtifactBucketName=$ARTIFACT_BUCKET"
+                "SharedArtifactBucketArn=arn:aws:s3:::$ARTIFACT_BUCKET"
+              )
+            fi
+
+            aws cloudformation deploy \
+              --template-file "$TEMPLATE_FILE" \
+              --stack-name "$STACK_NAME" \
+              --s3-bucket "$ARTIFACT_BUCKET" \
+              --no-fail-on-empty-changeset \
+              "${ROLE_ARG[@]}" \
+              --capabilities CAPABILITY_NAMED_IAM \
+              --parameter-overrides "${PARAM_OVERRIDES[@]}"
+          done
 
       - name: Build frontend
         run: |
@@ -257,9 +307,11 @@ jobs:
         run: |
           FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET_PROD }}"
           if [ -z "$FRONTEND_BUCKET" ]; then FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET }}"; fi
+          if [ -z "$FRONTEND_BUCKET" ]; then FRONTEND_BUCKET="kondate-loop-prod-s3-web-211669976488-ap-northeast-1"; fi
           FRONTEND_BUCKET="${FRONTEND_BUCKET#arn:aws:s3:::}"
           if [ -z "$FRONTEND_BUCKET" ]; then
             ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
             FRONTEND_BUCKET="kondate-prod-s3-web-${ACCOUNT_ID}-${AWS_REGION}"
           fi
+          echo "FRONTEND_BUCKET=$FRONTEND_BUCKET"
           aws s3 sync apps/web/dist "s3://${FRONTEND_BUCKET}/" --delete

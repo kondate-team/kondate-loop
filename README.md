@@ -101,3 +101,20 @@ npm run dev
 
 - フロントの仕様は `apps/web/INITIAL_RELEASE_REQUIREMENTS.md` と Notion のMVPエンハンスシートが正です。
 - UIルールは `apps/web/UI_RULES.md` を参照してください。
+
+## CI/CD (GitHub Actions Deploy)
+
+- Workflow: `.github/workflows/deploy.yml`
+- Behavior details: `DEPLOY_BEHAVIOR.md`
+- Triggers:
+  - push to `dev`: deploys backend + frontend (dev)
+  - push to `feature/*`: deploys `kondate-loop-backend-stack` only (dev)
+  - push to `main`: deploys prod
+- CloudFormation (dev) templates: `infra/aws-resources/kondate-loop-iam-github-oidc-stack.yaml`, `infra/aws-resources/kondate-loop-iam-LambdaExecutionRole-stack.yaml`, `infra/aws-resources/kondate-loop-iam-stack.yaml`, `infra/aws-resources/kondate-loop-backend-stack.yaml`, `infra/aws-resources/kondate-loop-infra-stack.yaml`.
+- CloudFormation (prod) templates: `infra/aws-resources/PROD/PRODkondate-loop-backend-stack.yaml`, `infra/aws-resources/PROD/PRODkondate-loop-infra-stack.yaml`.
+- `kondate-loop-iam-stack.yaml` (dev) requires `DEVELOPER_PRINCIPAL_ARN` (secret or var); if unset, the workflow skips that stack.
+- Default buckets (if vars unset): dev frontend `kondate-loop-dev-s3-web-211669976488-ap-northeast-1`, prod frontend `kondate-loop-prod-s3-web-211669976488-ap-northeast-1`, artifacts `kondate-loop-infra-s3-artifacts-211669976488-ap-northeast-1`.
+- Manual run (dev only): Actions -> Deploy -> Run workflow, set branch `dev`,
+  set `allow_stack_delete=true` to delete a `ROLLBACK_COMPLETE` stack and recreate.
+- Secrets/Vars are read from repo/org (environment secrets are not used).
+  Required: `AWS_ROLE_ARN_DEV` (dev), `AWS_ROLE_ARN` (prod).
