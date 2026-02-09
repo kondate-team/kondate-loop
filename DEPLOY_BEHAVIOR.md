@@ -68,3 +68,4 @@
   3) uploads to backend code bucket
   4) deploys with `LambdaCodeS3Key` and `LambdaHandler=dist/lambda.handler`
   5) runs smoke test: `POST /recipes` and verifies DynamoDB item exists.
+- Backend code bucket fallback name updated to `kondate-loop-<env>-s3-lcode-<accountId>-<region>` (was `...-lambda-code-...`).

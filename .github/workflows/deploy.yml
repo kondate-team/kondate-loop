@@ -59,7 +59,7 @@ jobs:
 
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           DEV_BACKEND_CODE_BUCKET="${{ vars.BACKEND_CODE_BUCKET_DEV }}"
-          if [ -z "$DEV_BACKEND_CODE_BUCKET" ]; then DEV_BACKEND_CODE_BUCKET="kondate-loop-dev-s3-lambda-code-${ACCOUNT_ID}-${AWS_REGION}"; fi
+          if [ -z "$DEV_BACKEND_CODE_BUCKET" ]; then DEV_BACKEND_CODE_BUCKET="kondate-loop-dev-s3-lcode-${ACCOUNT_ID}-${AWS_REGION}"; fi
           DEV_BACKEND_CODE_BUCKET="${DEV_BACKEND_CODE_BUCKET#arn:aws:s3:::}"
 
           LAMBDA_CODE_S3_KEY="backend/${GITHUB_SHA}/backend-lambda.zip"
@@ -115,7 +115,7 @@ jobs:
           PROD_FRONTEND_BUCKET="${PROD_FRONTEND_BUCKET#arn:aws:s3:::}"
 
           DEV_BACKEND_CODE_BUCKET="${{ vars.BACKEND_CODE_BUCKET_DEV }}"
-          if [ -z "$DEV_BACKEND_CODE_BUCKET" ]; then DEV_BACKEND_CODE_BUCKET="kondate-loop-dev-s3-lambda-code-${ACCOUNT_ID}-${AWS_REGION}"; fi
+          if [ -z "$DEV_BACKEND_CODE_BUCKET" ]; then DEV_BACKEND_CODE_BUCKET="kondate-loop-dev-s3-lcode-${ACCOUNT_ID}-${AWS_REGION}"; fi
           DEV_BACKEND_CODE_BUCKET="${DEV_BACKEND_CODE_BUCKET#arn:aws:s3:::}"
 
           ENABLE_GSI1="${{ vars.DDB_ENABLE_GSI1_DEV }}"
@@ -126,7 +126,7 @@ jobs:
           if [ -z "$ENABLE_GSI3" ]; then ENABLE_GSI3="false"; fi
 
           PROD_BACKEND_CODE_BUCKET="${{ vars.BACKEND_CODE_BUCKET_PROD }}"
-          if [ -z "$PROD_BACKEND_CODE_BUCKET" ]; then PROD_BACKEND_CODE_BUCKET="kondate-loop-prod-s3-lambda-code-${ACCOUNT_ID}-${AWS_REGION}"; fi
+          if [ -z "$PROD_BACKEND_CODE_BUCKET" ]; then PROD_BACKEND_CODE_BUCKET="kondate-loop-prod-s3-lcode-${ACCOUNT_ID}-${AWS_REGION}"; fi
           PROD_BACKEND_CODE_BUCKET="${PROD_BACKEND_CODE_BUCKET#arn:aws:s3:::}"
 
           delete_if_rollback() {
