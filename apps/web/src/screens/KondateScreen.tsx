@@ -94,7 +94,7 @@ export function KondateScreen({
         <Stack gap="lg">
           <div className="flex items-center">
             <H2 className="relative text-[22px] tracking-tight">
-              <span className="relative z-10">献立表</span>
+              <span className="relative z-10">こんだて</span>
               <span className="absolute -bottom-1 left-0 h-3 w-full origin-left skew-x-[-12deg] rounded-[1px] bg-orange-200/75" />
             </H2>
           </div>
@@ -183,7 +183,7 @@ export function KondateScreen({
           )}
 
           <Stack gap="md">
-              <SectionHeader title="次の献立" />
+              <SectionHeader title="次のセット" />
               {nextSet ? (
                 <Stack gap="sm">
                   <div className="w-[140px]">
@@ -228,7 +228,7 @@ export function KondateScreen({
                 <Stack gap="sm" align="center" className="text-center">
                   <Muted>未設定</Muted>
                   <Button variant="secondary" size="sm" onClick={onSelectNext}>
-                    次の献立を選ぶ
+                    次のセットを選ぶ
                   </Button>
                 </Stack>
               )}
