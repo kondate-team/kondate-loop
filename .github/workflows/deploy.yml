@@ -93,6 +93,13 @@ jobs:
           if [ -z "$DEV_BACKEND_CODE_BUCKET" ]; then DEV_BACKEND_CODE_BUCKET="kondate-loop-dev-s3-lambda-code-${ACCOUNT_ID}-${AWS_REGION}"; fi
           DEV_BACKEND_CODE_BUCKET="${DEV_BACKEND_CODE_BUCKET#arn:aws:s3:::}"
 
+          ENABLE_GSI1="${{ vars.DDB_ENABLE_GSI1_DEV }}"
+          if [ -z "$ENABLE_GSI1" ]; then ENABLE_GSI1="true"; fi
+          ENABLE_GSI2="${{ vars.DDB_ENABLE_GSI2_DEV }}"
+          if [ -z "$ENABLE_GSI2" ]; then ENABLE_GSI2="false"; fi
+          ENABLE_GSI3="${{ vars.DDB_ENABLE_GSI3_DEV }}"
+          if [ -z "$ENABLE_GSI3" ]; then ENABLE_GSI3="false"; fi
+
           PROD_BACKEND_CODE_BUCKET="${{ vars.BACKEND_CODE_BUCKET_PROD }}"
           if [ -z "$PROD_BACKEND_CODE_BUCKET" ]; then PROD_BACKEND_CODE_BUCKET="kondate-loop-prod-s3-lambda-code-${ACCOUNT_ID}-${AWS_REGION}"; fi
           PROD_BACKEND_CODE_BUCKET="${PROD_BACKEND_CODE_BUCKET#arn:aws:s3:::}"
@@ -146,6 +153,14 @@ jobs:
                   "ProdBackendCodeBucketName=$PROD_BACKEND_CODE_BUCKET"
                   "DevStackName=kondate-loop-backend-stack"
                   "ProdStackName=PRODkondate-loop-backend-stack"
+                )
+                ;;
+              *kondate-loop-backend-stack.yaml)
+                PARAM_OVERRIDES=(
+                  "Env=$ENV_NAME"
+                  "EnableGSI1=$ENABLE_GSI1"
+                  "EnableGSI2=$ENABLE_GSI2"
+                  "EnableGSI3=$ENABLE_GSI3"
                 )
                 ;;
               *)
@@ -270,6 +285,13 @@ jobs:
           ROLE_ARG=()
           if [ -n "$EXEC_ROLE_ARN" ]; then ROLE_ARG=(--role-arn "$EXEC_ROLE_ARN"); fi
 
+          ENABLE_GSI1="${{ vars.DDB_ENABLE_GSI1_PROD }}"
+          if [ -z "$ENABLE_GSI1" ]; then ENABLE_GSI1="true"; fi
+          ENABLE_GSI2="${{ vars.DDB_ENABLE_GSI2_PROD }}"
+          if [ -z "$ENABLE_GSI2" ]; then ENABLE_GSI2="false"; fi
+          ENABLE_GSI3="${{ vars.DDB_ENABLE_GSI3_PROD }}"
+          if [ -z "$ENABLE_GSI3" ]; then ENABLE_GSI3="false"; fi
+
           STACKS=(
             "${INFRA_STACK_NAME}|infra/aws-resources/PROD/PRODkondate-loop-infra-stack.yaml"
             "PRODkondate-loop-backend-stack|infra/aws-resources/PROD/PRODkondate-loop-backend-stack.yaml"
@@ -283,6 +305,13 @@ jobs:
               PARAM_OVERRIDES+=(
                 "SharedArtifactBucketName=$ARTIFACT_BUCKET"
                 "SharedArtifactBucketArn=arn:aws:s3:::$ARTIFACT_BUCKET"
+              )
+            fi
+            if [ "$TEMPLATE_FILE" = "infra/aws-resources/PROD/PRODkondate-loop-backend-stack.yaml" ]; then
+              PARAM_OVERRIDES+=(
+                "EnableGSI1=$ENABLE_GSI1"
+                "EnableGSI2=$ENABLE_GSI2"
+                "EnableGSI3=$ENABLE_GSI3"
               )
             fi
 

@@ -47,3 +47,14 @@
 
 - `workflow_dispatch` の `allow_stack_delete=true` は dev 系（`backend-dev`）でのみ有効。
 - 実行条件はすべてブランチ名（`github.ref`）で判定されるため、PRマージでも最終的に push 先ブランチの条件が適用される。
+
+## GSI staged rollout for backend stack (2026-02-09)
+- CloudFormation update for DynamoDB supports only one GSI create/delete per update.
+- `kondate-loop-backend-stack` / `PRODkondate-loop-backend-stack` now use parameters:
+  - `EnableGSI1` default `true`
+  - `EnableGSI2` default `false`
+  - `EnableGSI3` default `false`
+- `deploy.yml` forwards repo vars for staged rollout:
+  - dev: `DDB_ENABLE_GSI1_DEV`, `DDB_ENABLE_GSI2_DEV`, `DDB_ENABLE_GSI3_DEV`
+  - prod: `DDB_ENABLE_GSI1_PROD`, `DDB_ENABLE_GSI2_PROD`, `DDB_ENABLE_GSI3_PROD`
+- Enable indexes one by one across separate deploys.

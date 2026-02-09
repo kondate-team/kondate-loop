@@ -30,10 +30,34 @@ Parameters:
     Type: String
     Default: nodejs18.x
     Description: Lambda runtime
+  EnableGSI1:
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Enable DynamoDB GSI1
+  EnableGSI2:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Enable DynamoDB GSI2
+  EnableGSI3:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Enable DynamoDB GSI3
 
 Conditions:
   UseS3Code: !Not [!Equals [!Ref LambdaCodeS3Key, '']]
   HasCodeVersion: !Not [!Equals [!Ref LambdaCodeS3ObjectVersion, '']]
+  EnableGSI1Condition: !Equals [!Ref EnableGSI1, 'true']
+  EnableGSI2Condition: !Equals [!Ref EnableGSI2, 'true']
+  EnableGSI3Condition: !Equals [!Ref EnableGSI3, 'true']
 
 Resources:
   MainTable:
@@ -46,48 +70,75 @@ Resources:
           AttributeType: S
         - AttributeName: SK
           AttributeType: S
-        - AttributeName: GSI1PK
-          AttributeType: S
-        - AttributeName: GSI1SK
-          AttributeType: S
-        - AttributeName: GSI2PK
-          AttributeType: S
-        - AttributeName: GSI2SK
-          AttributeType: S
-        - AttributeName: GSI3PK
-          AttributeType: S
-        - AttributeName: GSI3SK
-          AttributeType: S
+        - !If
+          - EnableGSI1Condition
+          - AttributeName: GSI1PK
+            AttributeType: S
+          - !Ref AWS::NoValue
+        - !If
+          - EnableGSI1Condition
+          - AttributeName: GSI1SK
+            AttributeType: S
+          - !Ref AWS::NoValue
+        - !If
+          - EnableGSI2Condition
+          - AttributeName: GSI2PK
+            AttributeType: S
+          - !Ref AWS::NoValue
+        - !If
+          - EnableGSI2Condition
+          - AttributeName: GSI2SK
+            AttributeType: S
+          - !Ref AWS::NoValue
+        - !If
+          - EnableGSI3Condition
+          - AttributeName: GSI3PK
+            AttributeType: S
+          - !Ref AWS::NoValue
+        - !If
+          - EnableGSI3Condition
+          - AttributeName: GSI3SK
+            AttributeType: S
+          - !Ref AWS::NoValue
       KeySchema:
         - AttributeName: PK
           KeyType: HASH
         - AttributeName: SK
           KeyType: RANGE
       GlobalSecondaryIndexes:
-        - IndexName: GSI1
-          KeySchema:
-            - AttributeName: GSI1PK
-              KeyType: HASH
-            - AttributeName: GSI1SK
-              KeyType: RANGE
-          Projection:
-            ProjectionType: ALL
-        - IndexName: GSI2
-          KeySchema:
-            - AttributeName: GSI2PK
-              KeyType: HASH
-            - AttributeName: GSI2SK
-              KeyType: RANGE
-          Projection:
-            ProjectionType: ALL
-        - IndexName: GSI3
-          KeySchema:
-            - AttributeName: GSI3PK
-              KeyType: HASH
-            - AttributeName: GSI3SK
-              KeyType: RANGE
-          Projection:
-            ProjectionType: ALL
+        - !If
+          - EnableGSI1Condition
+          - IndexName: GSI1
+            KeySchema:
+              - AttributeName: GSI1PK
+                KeyType: HASH
+              - AttributeName: GSI1SK
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          - !Ref AWS::NoValue
+        - !If
+          - EnableGSI2Condition
+          - IndexName: GSI2
+            KeySchema:
+              - AttributeName: GSI2PK
+                KeyType: HASH
+              - AttributeName: GSI2SK
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          - !Ref AWS::NoValue
+        - !If
+          - EnableGSI3Condition
+          - IndexName: GSI3
+            KeySchema:
+              - AttributeName: GSI3PK
+                KeyType: HASH
+              - AttributeName: GSI3SK
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          - !Ref AWS::NoValue
       SSESpecification:
         SSEEnabled: true
       Tags:

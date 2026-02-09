@@ -155,3 +155,14 @@
 - Added GSI1/GSI2/GSI3 to dev/prod backend stack templates.
 - Added smoke script: `apps/api/scripts/smoke-api.js`.
 - Validation command: `npm run build --workspace=apps/api` then `npm run smoke:api --workspace=apps/api`.
+
+## 10. GSI rollout note (2026-02-09)
+- DynamoDB table update can create/delete only one GSI per stack update.
+- Backend templates now support staged rollout by parameters:
+  - `EnableGSI1` (default: `true`)
+  - `EnableGSI2` (default: `false`)
+  - `EnableGSI3` (default: `false`)
+- GitHub Actions `deploy.yml` forwards repo variables:
+  - Dev: `DDB_ENABLE_GSI1_DEV`, `DDB_ENABLE_GSI2_DEV`, `DDB_ENABLE_GSI3_DEV`
+  - Prod: `DDB_ENABLE_GSI1_PROD`, `DDB_ENABLE_GSI2_PROD`, `DDB_ENABLE_GSI3_PROD`
+- Rollout order: 1) GSI1 only -> 2) enable GSI2 -> 3) enable GSI3 (one change per deploy).
