@@ -111,9 +111,10 @@ npm run dev
 ## CI/CD (GitHub Actions Deploy)
 
 - Workflow: `.github/workflows/deploy.yml`
+- Behavior details: `DEPLOY_BEHAVIOR.md`
 - Triggers:
   - push to `dev`: deploys backend + frontend (dev)
-  - push to `feature/*`: deploys backend (dev)
+  - push to `feature/*`: deploys `kondate-loop-backend-stack` only (dev)
   - push to `main`: deploys prod
 - CloudFormation (dev) templates: `infra/aws-resources/kondate-loop-iam-github-oidc-stack.yaml`, `infra/aws-resources/kondate-loop-iam-LambdaExecutionRole-stack.yaml`, `infra/aws-resources/kondate-loop-iam-stack.yaml`, `infra/aws-resources/kondate-loop-backend-stack.yaml`, `infra/aws-resources/kondate-loop-infra-stack.yaml`.
 - CloudFormation (prod) templates: `infra/aws-resources/PROD/PRODkondate-loop-backend-stack.yaml`, `infra/aws-resources/PROD/PRODkondate-loop-infra-stack.yaml`.
