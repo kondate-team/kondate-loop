@@ -111,9 +111,10 @@ git remote set-url origin git@github.com:kondate-team/kondate-loop.git
 
 - Dev templates: infra/aws-resources/kondate-loop-iam-github-oidc-stack.yaml, infra/aws-resources/kondate-loop-iam-LambdaExecutionRole-stack.yaml, infra/aws-resources/kondate-loop-iam-stack.yaml, infra/aws-resources/kondate-loop-backend-stack.yaml, infra/aws-resources/kondate-loop-infra-stack.yaml.
 - Prod templates: infra/aws-resources/PROD/PRODkondate-loop-backend-stack.yaml, infra/aws-resources/PROD/PRODkondate-loop-infra-stack.yaml.
-- Default buckets (if vars unset): dev frontend kondate-loop-dev-s3-web-211669976488-ap-northeast-1, prod frontend kondate-prod-s3-web-211669976488-ap-northeast-1, artifacts kondate-loop-infra-s3-artifacts-211669976488-ap-northeast-1.
+- Default buckets (if vars unset): dev frontend kondate-loop-dev-s3-web-211669976488-ap-northeast-1, prod frontend kondate-loop-prod-s3-web-211669976488-ap-northeast-1, artifacts kondate-loop-infra-s3-artifacts-211669976488-ap-northeast-1.
 - Backend stack names: dev kondate-loop-backend-stack, prod PRODkondate-loop-backend-stack.
 - kondate-loop-iam-stack.yaml (dev) requires DEVELOPER_PRINCIPAL_ARN (secret or var); if unset, the workflow skips that stack.
+
 
 
 
