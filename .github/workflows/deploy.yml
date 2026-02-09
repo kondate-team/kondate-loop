@@ -114,13 +114,21 @@ jobs:
           }
 
           LAMBDA_EXEC_ROLE_ARN=""
-          STACKS=(
-            "kondate-loop-iam-github-oidc-stack|infra/aws-resources/kondate-loop-iam-github-oidc-stack.yaml"
-            "kondate-loop-iam-LambdaExecutionRole-stack|infra/aws-resources/kondate-loop-iam-LambdaExecutionRole-stack.yaml"
-            "kondate-loop-iam-stack|infra/aws-resources/kondate-loop-iam-stack.yaml"
-            "${INFRA_STACK_NAME}|infra/aws-resources/kondate-loop-infra-stack.yaml"
-            "kondate-loop-backend-stack|infra/aws-resources/kondate-loop-backend-stack.yaml"
-          )
+          STACKS=()
+          if [[ "${GITHUB_REF:-}" == refs/heads/feature/* ]]; then
+            echo "Feature branch detected. Deploying dev backend stack only."
+            STACKS=(
+              "kondate-loop-backend-stack|infra/aws-resources/kondate-loop-backend-stack.yaml"
+            )
+          else
+            STACKS=(
+              "kondate-loop-iam-github-oidc-stack|infra/aws-resources/kondate-loop-iam-github-oidc-stack.yaml"
+              "kondate-loop-iam-LambdaExecutionRole-stack|infra/aws-resources/kondate-loop-iam-LambdaExecutionRole-stack.yaml"
+              "kondate-loop-iam-stack|infra/aws-resources/kondate-loop-iam-stack.yaml"
+              "${INFRA_STACK_NAME}|infra/aws-resources/kondate-loop-infra-stack.yaml"
+              "kondate-loop-backend-stack|infra/aws-resources/kondate-loop-backend-stack.yaml"
+            )
+          fi
 
           for entry in "${STACKS[@]}"; do
             IFS='|' read -r STACK_NAME TEMPLATE_FILE <<< "$entry"
