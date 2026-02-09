@@ -18,6 +18,10 @@ Parameters:
     Type: String
     Default: ''
     Description: S3 key for Lambda zip. If empty, inline placeholder is used.
+  LambdaCodeS3Bucket:
+    Type: String
+    Default: ''
+    Description: Optional S3 bucket for Lambda zip. If empty, imported backend code bucket is used.
   LambdaCodeS3ObjectVersion:
     Type: String
     Default: ''
@@ -54,6 +58,7 @@ Parameters:
 
 Conditions:
   UseS3Code: !Not [!Equals [!Ref LambdaCodeS3Key, '']]
+  UseS3BucketOverride: !Not [!Equals [!Ref LambdaCodeS3Bucket, '']]
   HasCodeVersion: !Not [!Equals [!Ref LambdaCodeS3ObjectVersion, '']]
   EnableGSI1Condition: !Equals [!Ref EnableGSI1, 'true']
   EnableGSI2Condition: !Equals [!Ref EnableGSI2, 'true']
@@ -191,7 +196,10 @@ Resources:
         Fn::If:
           - UseS3Code
           - S3Bucket:
-              Fn::ImportValue: !Sub '${SystemId}-${Env}-backend-code-bucket-name'
+              !If
+                - UseS3BucketOverride
+                - !Ref LambdaCodeS3Bucket
+                - Fn::ImportValue: !Sub '${SystemId}-${Env}-backend-code-bucket-name'
             S3Key: !Ref LambdaCodeS3Key
             S3ObjectVersion: !If
               - HasCodeVersion

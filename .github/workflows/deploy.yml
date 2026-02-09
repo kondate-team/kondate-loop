@@ -59,11 +59,15 @@ jobs:
 
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           DEV_BACKEND_CODE_BUCKET="${{ vars.BACKEND_CODE_BUCKET_DEV }}"
-          if [ -z "$DEV_BACKEND_CODE_BUCKET" ]; then DEV_BACKEND_CODE_BUCKET="kondate-loop-dev-s3-lcode-${ACCOUNT_ID}-${AWS_REGION}"; fi
+          if [ -z "$DEV_BACKEND_CODE_BUCKET" ]; then DEV_BACKEND_CODE_BUCKET="${{ vars.CFN_ARTIFACT_BUCKET_DEV }}"; fi
+          if [ -z "$DEV_BACKEND_CODE_BUCKET" ]; then DEV_BACKEND_CODE_BUCKET="${{ vars.CFN_ARTIFACT_BUCKET }}"; fi
+          if [ -z "$DEV_BACKEND_CODE_BUCKET" ]; then DEV_BACKEND_CODE_BUCKET="${{ vars.CFN_ARTIFACT_BUCKET_NAME }}"; fi
+          if [ -z "$DEV_BACKEND_CODE_BUCKET" ]; then DEV_BACKEND_CODE_BUCKET="kondate-loop-infra-s3-artifacts-211669976488-ap-northeast-1"; fi
           DEV_BACKEND_CODE_BUCKET="${DEV_BACKEND_CODE_BUCKET#arn:aws:s3:::}"
 
           LAMBDA_CODE_S3_KEY="backend/${GITHUB_SHA}/backend-lambda.zip"
           aws s3 cp .artifacts/backend/backend-lambda.zip "s3://${DEV_BACKEND_CODE_BUCKET}/${LAMBDA_CODE_S3_KEY}"
+          echo "LAMBDA_CODE_S3_BUCKET=$DEV_BACKEND_CODE_BUCKET" >> "$GITHUB_ENV"
           echo "LAMBDA_CODE_S3_KEY=$LAMBDA_CODE_S3_KEY" >> "$GITHUB_ENV"
 
       - name: Deploy CloudFormation (dev)
@@ -186,6 +190,7 @@ jobs:
                   "EnableGSI1=$ENABLE_GSI1"
                   "EnableGSI2=$ENABLE_GSI2"
                   "EnableGSI3=$ENABLE_GSI3"
+                  "LambdaCodeS3Bucket=${LAMBDA_CODE_S3_BUCKET}"
                   "LambdaCodeS3Key=${LAMBDA_CODE_S3_KEY}"
                   "LambdaHandler=dist/lambda.handler"
                 )
