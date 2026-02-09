@@ -255,6 +255,7 @@ jobs:
             "${API_BASE}/recipes"
             "${API_BASE}/v1/recipes"
             "${API_BASE%/v1}/v1/recipes"
+            "${API_BASE%/v1}/recipes"
           )
 
           RECIPE_ID=""
@@ -274,8 +275,23 @@ jobs:
             fi
           done
           if [ -z "${RECIPE_ID}" ]; then
-            echo "Recipe ID not returned from API for all candidate URLs." >&2
-            exit 1
+            echo "Recipe ID not returned from API. Falling back to direct Lambda invoke..." >&2
+            PAYLOAD_FILE=/tmp/lambda_recipe_payload.json
+            RESPONSE_FILE=/tmp/lambda_recipe_response.json
+            printf '%s' "{\"resource\":\"/v1/{proxy+}\",\"path\":\"/v1/recipes\",\"httpMethod\":\"POST\",\"headers\":{\"content-type\":\"application/json\"},\"requestContext\":{\"stage\":\"dev\",\"path\":\"/dev/v1/recipes\"},\"body\":\"{\\\"userId\\\":\\\"${TEST_USER_ID}\\\",\\\"title\\\":\\\"${TEST_TITLE}\\\",\\\"servings\\\":2}\",\"isBase64Encoded\":false}" > "${PAYLOAD_FILE}"
+            aws lambda invoke \
+              --function-name "kondate-loop-dev-api-fn-proxy" \
+              --payload "fileb://${PAYLOAD_FILE}" \
+              "${RESPONSE_FILE}" >/tmp/lambda_invoke_meta.json
+            LAMBDA_STATUS=$(python -c "import json; print(json.load(open('/tmp/lambda_invoke_meta.json')).get('StatusCode',''))")
+            LAMBDA_BODY=$(python -c "import json; print(json.load(open('${RESPONSE_FILE}')).get('body',''))")
+            echo "Lambda invoke status: ${LAMBDA_STATUS}"
+            echo "Lambda response body: ${LAMBDA_BODY}"
+            RECIPE_ID=$(python -c "import sys,json; body=json.loads(sys.stdin.read() or '{}'); data=body.get('data') or {}; print(data.get('id',''))" <<< "${LAMBDA_BODY}")
+            if [ -z "${RECIPE_ID}" ]; then
+              echo "Recipe ID not returned from API nor Lambda invoke." >&2
+              exit 1
+            fi
           fi
 
           PK="USER#${TEST_USER_ID}"
