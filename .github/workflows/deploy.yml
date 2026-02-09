@@ -246,18 +246,35 @@ jobs:
             --stack-name "kondate-loop-backend-stack" \
             --query "Stacks[0].Outputs[?OutputKey=='MainTableName'].OutputValue" \
             --output text)
+          echo "API_BASE=${API_BASE}"
+          echo "TABLE_NAME=${TABLE_NAME}"
 
           TEST_USER_ID="gha-smoke-${GITHUB_RUN_ID}"
           TEST_TITLE="GHA Smoke ${GITHUB_SHA::7}"
+          CANDIDATE_URLS=(
+            "${API_BASE}/recipes"
+            "${API_BASE}/v1/recipes"
+            "${API_BASE%/v1}/v1/recipes"
+          )
 
-          RESPONSE=$(curl -sS -X POST "${API_BASE}/recipes" \
-            -H "content-type: application/json" \
-            -d "{\"userId\":\"${TEST_USER_ID}\",\"title\":\"${TEST_TITLE}\",\"servings\":2}")
-          echo "API response: ${RESPONSE}"
-
-          RECIPE_ID=$(python -c "import sys,json; print((json.load(sys.stdin).get('data') or {}).get('id',''))" <<< "${RESPONSE}")
+          RECIPE_ID=""
+          for URL in "${CANDIDATE_URLS[@]}"; do
+            HTTP_CODE=$(curl -sS -o /tmp/recipe_response.json -w "%{http_code}" \
+              -X POST "${URL}" \
+              -H "content-type: application/json" \
+              -d "{\"userId\":\"${TEST_USER_ID}\",\"title\":\"${TEST_TITLE}\",\"servings\":2}")
+            RESPONSE=$(cat /tmp/recipe_response.json)
+            echo "POST ${URL} -> ${HTTP_CODE}"
+            echo "API response: ${RESPONSE}"
+            if [ "${HTTP_CODE}" = "200" ] || [ "${HTTP_CODE}" = "201" ]; then
+              RECIPE_ID=$(python -c "import sys,json; print((json.load(sys.stdin).get('data') or {}).get('id',''))" <<< "${RESPONSE}")
+              if [ -n "${RECIPE_ID}" ]; then
+                break
+              fi
+            fi
+          done
           if [ -z "${RECIPE_ID}" ]; then
-            echo "Recipe ID not returned from API." >&2
+            echo "Recipe ID not returned from API for all candidate URLs." >&2
             exit 1
           fi
 
