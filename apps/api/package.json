@@ -5,11 +5,15 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "start": "node dist/server.js",
-    "build": "tsc"
+    "build": "tsc",
+    "smoke:api": "node scripts/smoke-api.js"
   },
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.918.0",
+    "@aws-sdk/lib-dynamodb": "^3.918.0",
     "express": "^4.21.0",
     "cors": "^2.8.5",
+    "serverless-http": "^3.2.0",
     "stripe": "^17.5.0",
     "dotenv": "^16.4.5"
   },

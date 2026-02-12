@@ -2,16 +2,18 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import Stripe from "stripe";
-import fs from "fs/promises";
-import path from "path";
+import { createDataStore } from "./db/storeFactory";
+import type { PlanType } from "./db/types";
 
 dotenv.config();
 
 const PORT = Number(process.env.PORT ?? 4242);
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? "http://localhost:5173";
 
-const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
-if (!STRIPE_SECRET_KEY) throw new Error("Missing STRIPE_SECRET_KEY in .env");
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY ?? "sk_test_dummy";
+if (!process.env.STRIPE_SECRET_KEY) {
+  console.warn("STRIPE_SECRET_KEY is not set. Stripe endpoints will fail until configured.");
+}
 
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET ?? "";
 const STRIPE_PRICE_ID_USER_PLUS = process.env.STRIPE_PRICE_ID_USER_PLUS ?? "";
@@ -20,12 +22,20 @@ const STRIPE_PRICE_ID_CREATOR = process.env.STRIPE_PRICE_ID_CREATOR ?? "";
 const PLATFORM_FEE_PERCENT = Number(process.env.PLATFORM_FEE_PERCENT ?? 10);
 
 const stripe = new Stripe(STRIPE_SECRET_KEY);
+const store = createDataStore();
+export const app = express();
 
-const app = express();
+function nowIso(): string {
+  return new Date().toISOString();
+}
 
-// ======================
-// Webhook（生のbodyが必要）
-// ======================
+function resolveUserId(req: express.Request): string {
+  const bodyUserId = typeof req.body?.userId === "string" ? req.body.userId : "";
+  const queryUserId = typeof req.query?.userId === "string" ? req.query.userId : "";
+  const headerUserId = typeof req.headers["x-user-id"] === "string" ? req.headers["x-user-id"] : "";
+  return bodyUserId || queryUserId || headerUserId || "demo-user";
+}
+
 app.post(
   "/webhooks/stripe",
   express.raw({ type: "application/json" }),
@@ -36,24 +46,16 @@ app.post(
         return res.status(400).send("Missing Stripe-Signature header");
       }
       if (!STRIPE_WEBHOOK_SECRET) {
-        console.warn("STRIPE_WEBHOOK_SECRET not set, skipping signature verification");
-        // 開発中はシークレット未設定でも動くようにする
         const event = JSON.parse(req.body.toString());
         await handleWebhookEvent(event);
         return res.json({ received: true });
       }
 
-      const event = stripe.webhooks.constructEvent(
-        req.body,
-        sig,
-        STRIPE_WEBHOOK_SECRET
-      );
-
+      const event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
       await handleWebhookEvent(event);
-      res.json({ received: true });
+      return res.json({ received: true });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "unknown";
-      console.error("Webhook Error:", message);
       return res.status(400).send(`Webhook Error: ${message}`);
     }
   }
@@ -63,180 +65,66 @@ async function handleWebhookEvent(event: Stripe.Event) {
   switch (event.type) {
     case "invoice.paid": {
       const invoice = event.data.object as Stripe.Invoice;
-      // サブスクのmetadataからプランを取得
       const subId = invoice.subscription as string | null;
       let plan: PlanType = "user_plus";
       if (subId) {
         const sub = await stripe.subscriptions.retrieve(subId);
         plan = (sub.metadata?.plan as PlanType) || "user_plus";
       }
-      await markUserByCustomerId(invoice.customer as string, {
+      await store.updateUserByCustomerId(invoice.customer as string, {
         plan,
         subscriptionStatus: "active",
       });
-      console.log(`[Webhook] invoice.paid: ${invoice.customer} -> ${plan}`);
       break;
     }
 
     case "invoice.payment_failed": {
       const invoice = event.data.object as Stripe.Invoice;
-      await markUserByCustomerId(invoice.customer as string, {
+      await store.updateUserByCustomerId(invoice.customer as string, {
         subscriptionStatus: "past_due",
       });
-      console.log(`[Webhook] invoice.payment_failed: ${invoice.customer}`);
       break;
     }
 
     case "customer.subscription.deleted": {
       const sub = event.data.object as Stripe.Subscription;
-      await markUserByCustomerId(sub.customer as string, {
+      await store.updateUserByCustomerId(sub.customer as string, {
         subscriptionStatus: "canceled",
         plan: "free",
       });
-      console.log(`[Webhook] customer.subscription.deleted: ${sub.customer}`);
       break;
     }
 
     case "customer.subscription.updated": {
       const sub = event.data.object as Stripe.Subscription;
-      await markUserByCustomerId(sub.customer as string, {
+      await store.updateUserByCustomerId(sub.customer as string, {
         subscriptionStatus: sub.status ?? "unknown",
       });
-      console.log(`[Webhook] customer.subscription.updated: ${sub.customer} -> ${sub.status}`);
       break;
     }
 
-    // Connect関連
     case "account.updated": {
       const account = event.data.object as Stripe.Account;
       const userId = account.metadata?.userId;
       if (userId) {
-        const store = await readStore();
-        if (store.users[userId]) {
-          store.users[userId].connectOnboardingComplete = account.payouts_enabled ?? false;
-          await writeStore(store);
-        }
+        await store.updateUser(userId, {
+          connectOnboardingComplete: account.payouts_enabled ?? false,
+        });
       }
-      console.log(`[Webhook] account.updated: ${account.id} payouts_enabled=${account.payouts_enabled}`);
-      break;
-    }
-
-    case "payout.paid": {
-      const payout = event.data.object as Stripe.Payout;
-      console.log(`[Webhook] payout.paid: ${payout.id} amount=${payout.amount}`);
-      break;
-    }
-
-    case "payout.failed": {
-      const payout = event.data.object as Stripe.Payout;
-      console.log(`[Webhook] payout.failed: ${payout.id} failure_message=${payout.failure_message}`);
       break;
     }
 
     default:
-      console.log(`[Webhook] Unhandled event type: ${event.type}`);
+      break;
   }
 }
 
-// ここから下は通常API（JSON bodyでOK）
 app.use(cors({ origin: CORS_ORIGIN, credentials: true }));
 app.use(express.json());
 
-// ======================
-// 開発用の簡易ストア
-// ======================
-type PlanType = "free" | "user_plus" | "creator_plus" | "creator";
-
-type UserRecord = {
-  userId: string;
-  email: string;
-  stripeCustomerId?: string;
-  stripeDefaultPaymentMethodId?: string;
-  stripeSubscriptionId?: string;
-  stripeConnectAccountId?: string; // クリエイター用のConnect Account
-  plan?: PlanType;
-  subscriptionStatus?: string;
-  connectOnboardingComplete?: boolean; // Connect本人確認完了フラグ
-};
-
-type Store = { users: Record<string, UserRecord> };
-
-const STORE_PATH = path.join(process.cwd(), "data", "store.json");
-
-async function readStore(): Promise<Store> {
-  try {
-    const raw = await fs.readFile(STORE_PATH, "utf8");
-    return JSON.parse(raw);
-  } catch (e: unknown) {
-    const err = e as NodeJS.ErrnoException;
-    if (err.code === "ENOENT") {
-      await fs.mkdir(path.dirname(STORE_PATH), { recursive: true });
-      const init: Store = { users: {} };
-      await fs.writeFile(STORE_PATH, JSON.stringify(init, null, 2), "utf8");
-      return init;
-    }
-    throw e;
-  }
-}
-
-async function writeStore(store: Store): Promise<void> {
-  await fs.mkdir(path.dirname(STORE_PATH), { recursive: true });
-  await fs.writeFile(STORE_PATH, JSON.stringify(store, null, 2), "utf8");
-}
-
-async function upsertUser(userId: string, email: string): Promise<UserRecord> {
-  const store = await readStore();
-  const existing = store.users[userId];
-  const next: UserRecord = {
-    userId,
-    email,
-    plan: existing?.plan ?? "free",
-    subscriptionStatus: existing?.subscriptionStatus ?? "none",
-    stripeCustomerId: existing?.stripeCustomerId,
-    stripeDefaultPaymentMethodId: existing?.stripeDefaultPaymentMethodId,
-    stripeSubscriptionId: existing?.stripeSubscriptionId,
-  };
-  store.users[userId] = next;
-  await writeStore(store);
-  return next;
-}
-
-async function getUser(userId: string): Promise<UserRecord | null> {
-  const store = await readStore();
-  return store.users[userId] ?? null;
-}
-
-async function findUserByCustomerId(
-  customerId: string
-): Promise<UserRecord | null> {
-  const store = await readStore();
-  const users = Object.values(store.users);
-  return users.find((u) => u.stripeCustomerId === customerId) ?? null;
-}
-
-async function markUserByCustomerId(
-  customerId: string,
-  patch: Partial<UserRecord>
-) {
-  const u = await findUserByCustomerId(customerId);
-  if (!u) {
-    console.warn("No user found for customer:", customerId);
-    return;
-  }
-  const store = await readStore();
-  store.users[u.userId] = { ...store.users[u.userId], ...patch };
-  await writeStore(store);
-}
-
-// ======================
-// API: health check
-// ======================
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
-// ======================
-// API: 支払い方法登録
-// POST /v1/payment-methods
-// ======================
+// payment / subscription / connect
 app.post("/v1/payment-methods", async (req, res) => {
   try {
     const { userId, email, paymentMethodId } = req.body ?? {};
@@ -246,9 +134,7 @@ app.post("/v1/payment-methods", async (req, res) => {
       });
     }
 
-    const user = await upsertUser(userId, email);
-
-    // 1) Stripe Customer を用意（無ければ作る）
+    const user = await store.upsertUser(userId, email);
     let customerId = user.stripeCustomerId;
     if (!customerId) {
       const customer = await stripe.customers.create({
@@ -258,26 +144,17 @@ app.post("/v1/payment-methods", async (req, res) => {
       customerId = customer.id;
     }
 
-    // 2) PaymentMethod を Customer に紐づける
     await stripe.paymentMethods.attach(paymentMethodId, { customer: customerId });
-
-    // 3) デフォルト支払い方法に設定
     await stripe.customers.update(customerId, {
       invoice_settings: { default_payment_method: paymentMethodId },
     });
 
-    // 4) 保存
-    const store = await readStore();
-    store.users[userId] = {
-      ...store.users[userId],
+    await store.updateUser(userId, {
       stripeCustomerId: customerId,
       stripeDefaultPaymentMethodId: paymentMethodId,
-    };
-    await writeStore(store);
+    });
 
-    // カード情報を返す
     const pm = await stripe.paymentMethods.retrieve(paymentMethodId);
-
     return res.json({
       ok: true,
       customerId,
@@ -293,24 +170,17 @@ app.post("/v1/payment-methods", async (req, res) => {
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
-    console.error(err);
     return res.status(400).json({ error: message });
   }
 });
 
-// ======================
-// API: サブスク開始
-// POST /v1/subscriptions
-// ======================
 app.post("/v1/subscriptions", async (req, res) => {
   try {
     const { userId, priceId } = req.body ?? {};
-    if (!userId) {
-      return res.status(400).json({ error: "Missing userId" });
-    }
+    if (!userId) return res.status(400).json({ error: "Missing userId" });
 
-    const user = await getUser(userId);
-    if (!user || !user.stripeCustomerId) {
+    const user = await store.getUser(userId);
+    if (!user?.stripeCustomerId) {
       return res.status(400).json({
         error: "User not found or stripeCustomerId missing. Call POST /v1/payment-methods first.",
       });
@@ -323,7 +193,6 @@ app.post("/v1/subscriptions", async (req, res) => {
       });
     }
 
-    // priceIdからプランを判定
     let planType: PlanType = "user_plus";
     if (usePriceId === STRIPE_PRICE_ID_CREATOR_PLUS) {
       planType = "creator_plus";
@@ -340,28 +209,22 @@ app.post("/v1/subscriptions", async (req, res) => {
       metadata: { userId, plan: planType },
     });
 
-    // clientSecret 抽出
     let clientSecret: string | null = null;
     const latestInvoice = subscription.latest_invoice as Stripe.Invoice & {
       confirmation_secret?: { client_secret?: string };
       payment_intent?: Stripe.PaymentIntent;
     };
-
     if (latestInvoice?.confirmation_secret?.client_secret) {
       clientSecret = latestInvoice.confirmation_secret.client_secret;
     } else if (latestInvoice?.payment_intent?.client_secret) {
       clientSecret = latestInvoice.payment_intent.client_secret;
     }
 
-    // 保存
-    const store = await readStore();
-    store.users[userId] = {
-      ...store.users[userId],
+    await store.updateUser(userId, {
       stripeSubscriptionId: subscription.id,
       plan: planType,
       subscriptionStatus: subscription.status ?? "unknown",
-    };
-    await writeStore(store);
+    });
 
     return res.json({
       ok: true,
@@ -371,21 +234,16 @@ app.post("/v1/subscriptions", async (req, res) => {
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
-    console.error(err);
     return res.status(400).json({ error: message });
   }
 });
 
-// ======================
-// API: サブスク解約（期間末解約）
-// DELETE /v1/subscriptions
-// ======================
 app.delete("/v1/subscriptions", async (req, res) => {
   try {
     const { userId } = req.body ?? {};
     if (!userId) return res.status(400).json({ error: "Missing userId" });
 
-    const user = await getUser(userId);
+    const user = await store.getUser(userId);
     if (!user?.stripeSubscriptionId) {
       return res.status(400).json({ error: "No subscription to cancel" });
     }
@@ -394,61 +252,44 @@ app.delete("/v1/subscriptions", async (req, res) => {
       cancel_at_period_end: true,
     });
 
-    // 保存
-    const store = await readStore();
-    store.users[userId] = {
-      ...store.users[userId],
+    await store.updateUser(userId, {
       subscriptionStatus: updated.status ?? "unknown",
-    };
-    await writeStore(store);
+    });
 
     return res.json({ ok: true, subscription: updated });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
-    console.error(err);
     return res.status(400).json({ error: message });
   }
 });
 
-// ======================
-// API: クリエイタープラン購入（買い切り）
-// POST /v1/purchases/plan
-// ======================
 app.post("/v1/purchases/plan", async (req, res) => {
   try {
     const { userId, planId } = req.body ?? {};
-    if (!userId) {
-      return res.status(400).json({ error: "Missing userId" });
-    }
+    if (!userId) return res.status(400).json({ error: "Missing userId" });
 
-    const user = await getUser(userId);
-    if (!user || !user.stripeCustomerId) {
+    const user = await store.getUser(userId);
+    if (!user?.stripeCustomerId) {
       return res.status(400).json({
         error: "User not found or stripeCustomerId missing. Call POST /v1/payment-methods first.",
       });
     }
-
-    // 現状はcreatorプランのみ対応
     if (planId !== "creator") {
       return res.status(400).json({ error: "Only 'creator' plan is supported for one-time purchase" });
     }
-
     if (!STRIPE_PRICE_ID_CREATOR) {
       return res.status(500).json({ error: "STRIPE_PRICE_ID_CREATOR not configured" });
     }
-
-    // 既にクリエイタープランを持っている場合はエラー
     if (user.plan === "creator" || user.plan === "creator_plus") {
       return res.status(400).json({ error: "User already has creator plan" });
     }
 
-    // PaymentIntent を作成（即時決済）
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: 1200, // ¥1,200
+      amount: 1200,
       currency: "jpy",
       customer: user.stripeCustomerId,
       payment_method: user.stripeDefaultPaymentMethodId,
-      confirm: true, // 即時決済
+      confirm: true,
       automatic_payment_methods: {
         enabled: true,
         allow_redirects: "never",
@@ -457,42 +298,27 @@ app.post("/v1/purchases/plan", async (req, res) => {
     });
 
     if (paymentIntent.status === "succeeded") {
-      // プラン更新
-      const store = await readStore();
-      store.users[userId] = {
-        ...store.users[userId],
-        plan: "creator",
-      };
-      await writeStore(store);
-
+      await store.updateUser(userId, { plan: "creator" });
       return res.json({
         ok: true,
         status: "succeeded",
         paymentIntentId: paymentIntent.id,
         plan: "creator",
       });
-    } else {
-      // 決済完了していない場合（3Dセキュア等）
-      return res.json({
-        ok: false,
-        status: paymentIntent.status,
-        clientSecret: paymentIntent.client_secret,
-        paymentIntentId: paymentIntent.id,
-      });
     }
+
+    return res.json({
+      ok: false,
+      status: paymentIntent.status,
+      clientSecret: paymentIntent.client_secret,
+      paymentIntentId: paymentIntent.id,
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
-    console.error(err);
     return res.status(400).json({ error: message });
   }
 });
 
-// ======================
-// Stripe Connect: クリエイター向けAPI
-// ======================
-
-// Connect Account作成
-// POST /v1/connect/accounts
 app.post("/v1/connect/accounts", async (req, res) => {
   try {
     const { userId, email } = req.body ?? {};
@@ -500,9 +326,7 @@ app.post("/v1/connect/accounts", async (req, res) => {
       return res.status(400).json({ error: "Missing userId or email" });
     }
 
-    const user = await getUser(userId);
-
-    // 既にConnect Accountがある場合はそれを返す
+    const user = await store.getUser(userId);
     if (user?.stripeConnectAccountId) {
       const account = await stripe.accounts.retrieve(user.stripeConnectAccountId);
       return res.json({
@@ -514,7 +338,6 @@ app.post("/v1/connect/accounts", async (req, res) => {
       });
     }
 
-    // Express Account を作成
     const account = await stripe.accounts.create({
       type: "express",
       country: "JP",
@@ -527,13 +350,8 @@ app.post("/v1/connect/accounts", async (req, res) => {
       metadata: { userId },
     });
 
-    // 保存
-    const store = await readStore();
-    if (!store.users[userId]) {
-      store.users[userId] = { userId, email };
-    }
-    store.users[userId].stripeConnectAccountId = account.id;
-    await writeStore(store);
+    await store.upsertUser(userId, email);
+    await store.updateUser(userId, { stripeConnectAccountId: account.id });
 
     return res.json({
       ok: true,
@@ -544,21 +362,16 @@ app.post("/v1/connect/accounts", async (req, res) => {
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
-    console.error(err);
     return res.status(400).json({ error: message });
   }
 });
 
-// オンボーディングURL生成
-// POST /v1/connect/account-links
 app.post("/v1/connect/account-links", async (req, res) => {
   try {
     const { userId, returnUrl, refreshUrl } = req.body ?? {};
-    if (!userId) {
-      return res.status(400).json({ error: "Missing userId" });
-    }
+    if (!userId) return res.status(400).json({ error: "Missing userId" });
 
-    const user = await getUser(userId);
+    const user = await store.getUser(userId);
     if (!user?.stripeConnectAccountId) {
       return res.status(400).json({ error: "Connect account not found. Create one first." });
     }
@@ -570,29 +383,20 @@ app.post("/v1/connect/account-links", async (req, res) => {
       type: "account_onboarding",
     });
 
-    return res.json({
-      ok: true,
-      url: accountLink.url,
-      expiresAt: accountLink.expires_at,
-    });
+    return res.json({ ok: true, url: accountLink.url, expiresAt: accountLink.expires_at });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
-    console.error(err);
     return res.status(400).json({ error: message });
   }
 });
 
-// Connect Account状態確認
-// GET /v1/connect/accounts/:userId
 app.get("/v1/connect/accounts/:userId", async (req, res) => {
   try {
-    const user = await getUser(req.params.userId);
+    const user = await store.getUser(req.params.userId);
     if (!user?.stripeConnectAccountId) {
       return res.status(404).json({ error: "Connect account not found" });
     }
-
     const account = await stripe.accounts.retrieve(user.stripeConnectAccountId);
-
     return res.json({
       ok: true,
       accountId: account.id,
@@ -603,41 +407,28 @@ app.get("/v1/connect/accounts/:userId", async (req, res) => {
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
-    console.error(err);
     return res.status(400).json({ error: message });
   }
 });
 
-// Expressダッシュボードリンク生成
-// POST /v1/connect/login-links
 app.post("/v1/connect/login-links", async (req, res) => {
   try {
     const { userId } = req.body ?? {};
-    if (!userId) {
-      return res.status(400).json({ error: "Missing userId" });
-    }
+    if (!userId) return res.status(400).json({ error: "Missing userId" });
 
-    const user = await getUser(userId);
+    const user = await store.getUser(userId);
     if (!user?.stripeConnectAccountId) {
       return res.status(400).json({ error: "Connect account not found" });
     }
 
     const loginLink = await stripe.accounts.createLoginLink(user.stripeConnectAccountId);
-
-    return res.json({
-      ok: true,
-      url: loginLink.url,
-    });
+    return res.json({ ok: true, url: loginLink.url });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
-    console.error(err);
     return res.status(400).json({ error: message });
   }
 });
 
-// 有料コンテンツ購入（レシピ、セット、メンバーシップ）
-// POST /v1/purchases/content
-// ※プラットフォーム受取型：全額プラットフォームが受け取り、後日クリエイターに振込
 app.post("/v1/purchases/content", async (req, res) => {
   try {
     const { userId, creatorId, contentType, contentId, amount } = req.body ?? {};
@@ -646,23 +437,17 @@ app.post("/v1/purchases/content", async (req, res) => {
         error: "Missing fields. Required: { userId, creatorId, contentType, contentId, amount }",
       });
     }
-
-    // 金額チェック（¥100〜¥10,000）
     if (amount < 100 || amount > 10000) {
-      return res.status(400).json({ error: "Amount must be between ¥100 and ¥10,000" });
+      return res.status(400).json({ error: "Amount must be between JPY 100 and 10,000" });
     }
 
-    const buyer = await getUser(userId);
+    const buyer = await store.getUser(userId);
     if (!buyer?.stripeCustomerId) {
       return res.status(400).json({ error: "Buyer has no payment method registered" });
     }
 
-    // プラットフォーム手数料を計算（10%）- 後日振込時に使用
     const platformFee = Math.floor(amount * (PLATFORM_FEE_PERCENT / 100));
     const creatorReceives = amount - platformFee;
-
-    // 通常のPaymentIntent（全額プラットフォームが受け取る）
-    // クリエイターへの支払いは後日銀行振込で行う
     const paymentIntent = await stripe.paymentIntents.create({
       amount,
       currency: "jpy",
@@ -684,11 +469,6 @@ app.post("/v1/purchases/content", async (req, res) => {
     });
 
     if (paymentIntent.status === "succeeded") {
-      // TODO: 購入履歴をDBに保存（後日振込用）
-      console.log(`[Content Purchase] ${contentType}:${contentId} by ${userId}`);
-      console.log(`  Amount: ¥${amount}, Creator: ${creatorId}`);
-      console.log(`  Platform fee: ¥${platformFee}, Creator receives: ¥${creatorReceives}`);
-
       return res.json({
         ok: true,
         status: "succeeded",
@@ -697,31 +477,330 @@ app.post("/v1/purchases/content", async (req, res) => {
         platformFee,
         creatorReceives,
       });
-    } else {
-      return res.json({
-        ok: false,
-        status: paymentIntent.status,
-        clientSecret: paymentIntent.client_secret,
-        paymentIntentId: paymentIntent.id,
-      });
     }
+    return res.json({
+      ok: false,
+      status: paymentIntent.status,
+      clientSecret: paymentIntent.client_secret,
+      paymentIntentId: paymentIntent.id,
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
-    console.error(err);
     return res.status(400).json({ error: message });
   }
 });
 
-// ======================
-// API: ユーザー情報取得（デバッグ用）
-// GET /v1/users/:userId
-// ======================
+// recipes
+app.get("/v1/recipes", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const items = await store.listRecipes(userId);
+    return res.json({ data: { items } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.get("/v1/recipes/:id", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const recipe = await store.getRecipe(userId, req.params.id);
+    if (!recipe) return res.status(404).json({ error: "Recipe not found" });
+    return res.json({ data: recipe });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.post("/v1/recipes", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const { title, servings } = req.body ?? {};
+    if (!title || !servings) {
+      return res.status(400).json({ error: "title and servings are required" });
+    }
+    const recipe = await store.createRecipe({ userId, ...req.body });
+    return res.status(201).json({ data: recipe });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.patch("/v1/recipes/:id", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const updated = await store.updateRecipe(userId, req.params.id, req.body ?? {});
+    if (!updated) return res.status(404).json({ error: "Recipe not found" });
+    return res.json({ data: updated });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.delete("/v1/recipes/:id", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const deleted = await store.deleteRecipe(userId, req.params.id);
+    if (!deleted) return res.status(404).json({ error: "Recipe not found" });
+    return res.json({ data: { id: req.params.id, deleted: true } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+// sets
+app.get("/v1/sets", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const items = await store.listSets(userId);
+    return res.json({ data: { items } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.get("/v1/sets/:id", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const set = await store.getSet(userId, req.params.id);
+    if (!set) return res.status(404).json({ error: "Set not found" });
+    return res.json({ data: set });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.post("/v1/sets", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const { title, recipeIds } = req.body ?? {};
+    if (!title || !Array.isArray(recipeIds)) {
+      return res.status(400).json({ error: "title and recipeIds are required" });
+    }
+    const set = await store.createSet({ userId, ...req.body });
+    return res.status(201).json({ data: set });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.patch("/v1/sets/:id", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const updated = await store.updateSet(userId, req.params.id, req.body ?? {});
+    if (!updated) return res.status(404).json({ error: "Set not found" });
+    return res.json({ data: updated });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.delete("/v1/sets/:id", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const deleted = await store.deleteSet(userId, req.params.id);
+    if (!deleted) return res.status(404).json({ error: "Set not found" });
+    return res.json({ data: { id: req.params.id, deleted: true } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+// plan
+app.get("/v1/plan", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const plan = await store.getPlan(userId);
+    return res.json({ data: plan });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.post("/v1/plan/select-set", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const { setId, slot } = req.body ?? {};
+    if (!setId || (slot !== "current" && slot !== "next")) {
+      return res.status(400).json({ error: "setId and slot(current|next) are required" });
+    }
+    const set = await store.getSet(userId, setId);
+    if (!set) return res.status(404).json({ error: "Set not found" });
+    const items = await store.buildPlanItems(userId, set.recipeIds);
+    const planSlot = {
+      setId: set.id,
+      setTitle: set.title,
+      appliedAt: nowIso(),
+      items,
+    };
+    await store.setPlanSlot(userId, slot, planSlot);
+    return res.json({ data: planSlot });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.patch("/v1/plan/items/:id", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const { isCooked } = req.body ?? {};
+    if (typeof isCooked !== "boolean") {
+      return res.status(400).json({ error: "isCooked(boolean) is required" });
+    }
+    const result = await store.updatePlanItemCooked(userId, req.params.id, isCooked);
+    if (!result) return res.status(404).json({ error: "Plan item not found" });
+    return res.json({ data: result });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+// shopping
+app.get("/v1/shopping-list", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const items = await store.listShoppingItems(userId);
+    return res.json({ data: { items } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.post("/v1/shopping-list/items", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const { name, quantity, unit } = req.body ?? {};
+    if (!name || typeof quantity !== "number" || !unit) {
+      return res.status(400).json({ error: "name, quantity(number), unit are required" });
+    }
+    const item = await store.createShoppingItem(userId, { name, quantity, unit });
+    return res.status(201).json({ data: item });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.patch("/v1/shopping-list/items/:id", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const updated = await store.updateShoppingItem(userId, req.params.id, req.body ?? {});
+    if (!updated) return res.status(404).json({ error: "Shopping item not found" });
+    return res.json({ data: updated });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.post("/v1/shopping-list/complete", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const result = await store.completeShopping(userId);
+    return res.json({ data: result });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+// fridge
+app.get("/v1/fridge", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const items = await store.listFridgeItems(userId);
+    return res.json({ data: { items } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.post("/v1/fridge/items", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const { name, quantity, unit, note } = req.body ?? {};
+    if (!name || typeof quantity !== "number" || !unit) {
+      return res.status(400).json({ error: "name, quantity(number), unit are required" });
+    }
+    const item = await store.createFridgeItem(userId, {
+      name,
+      quantity,
+      unit,
+      note: note ?? null,
+    });
+    return res.status(201).json({ data: item });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.patch("/v1/fridge/items/:id", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const updated = await store.updateFridgeItem(userId, req.params.id, req.body ?? {});
+    if (!updated) return res.status(404).json({ error: "Fridge item not found" });
+    return res.json({ data: updated });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.delete("/v1/fridge/items/:id", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const deleted = await store.deleteFridgeItem(userId, req.params.id);
+    if (!deleted) return res.status(404).json({ error: "Fridge item not found" });
+    return res.json({ data: { id: deleted.id, deletedAt: deleted.deletedAt } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.get("/v1/fridge/deleted", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const items = await store.listDeletedFridgeItems(userId);
+    return res.json({ data: { items } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.post("/v1/fridge/items/:id/restore", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const restored = await store.restoreFridgeItem(userId, req.params.id);
+    if (!restored) return res.status(404).json({ error: "Deleted item not found" });
+    return res.json({ data: restored });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
 app.get("/v1/users/:userId", async (req, res) => {
   try {
-    const user = await getUser(req.params.userId);
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
+    const user = await store.getUser(req.params.userId);
+    if (!user) return res.status(404).json({ error: "User not found" });
     return res.json(user);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
@@ -729,12 +808,15 @@ app.get("/v1/users/:userId", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`\n========================================`);
-  console.log(`  Kondate Loop Payments API`);
-  console.log(`========================================`);
-  console.log(`  Server:   http://localhost:${PORT}`);
-  console.log(`  Health:   http://localhost:${PORT}/health`);
-  console.log(`  Webhook:  POST http://localhost:${PORT}/webhooks/stripe`);
-  console.log(`========================================\n`);
-});
+if (!process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  app.listen(PORT, () => {
+    console.log(`\n========================================`);
+    console.log(`  Kondate Loop API`);
+    console.log(`========================================`);
+    console.log(`  Server:   http://localhost:${PORT}`);
+    console.log(`  Health:   http://localhost:${PORT}/health`);
+    console.log(`  Webhook:  POST http://localhost:${PORT}/webhooks/stripe`);
+    console.log(`  Driver:   ${(process.env.DATA_STORE_DRIVER ?? "file").toLowerCase()}`);
+    console.log(`========================================\n`);
+  });
+}

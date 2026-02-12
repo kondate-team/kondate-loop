@@ -320,6 +320,22 @@ Resources:
                 Resource:
                   - !GetAtt CfnExecutionRoleDev.Arn
                   - !GetAtt CfnExecutionRoleProd.Arn
+        - PolicyName: BackendSmokeReadAndInvoke
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${SystemId}-dev-api-fn-*'
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                Resource:
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${SystemId}-dev-data-ddb-main'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${SystemId}-dev-data-ddb-main/index/*'
       Tags:
         - Key: Owner
           Value: yukanagatake
