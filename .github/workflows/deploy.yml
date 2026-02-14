@@ -385,11 +385,13 @@ jobs:
         run: |
           ENV_NAME=prod
           INFRA_STACK_NAME="${{ vars.CFN_STACK_NAME_PROD }}"
+          if [ -z "$INFRA_STACK_NAME" ]; then INFRA_STACK_NAME="${{ vars.PROD_INFRA_STACK_NAME }}"; fi
           if [ -z "$INFRA_STACK_NAME" ]; then INFRA_STACK_NAME="${{ vars.CFN_STACK_NAME }}"; fi
-          if [ -z "$INFRA_STACK_NAME" ]; then INFRA_STACK_NAME="kondate-loop-infra-stack-${ENV_NAME}"; fi
+          if [ -z "$INFRA_STACK_NAME" ]; then INFRA_STACK_NAME="PRODkondate-loop-infra-stack"; fi
 
           EXEC_ROLE_ARN="${{ secrets.CFN_EXEC_ROLE_ARN_PROD }}"
           if [ -z "$EXEC_ROLE_ARN" ]; then EXEC_ROLE_ARN="${{ vars.CFN_EXEC_ROLE_ARN_PROD }}"; fi
+          if [ -z "$EXEC_ROLE_ARN" ]; then EXEC_ROLE_ARN="${{ vars.PROD_CFN_EXEC_ROLE_ARN }}"; fi
           if [ -z "$EXEC_ROLE_ARN" ]; then EXEC_ROLE_ARN="${{ vars.CFN_EXEC_ROLE_ARN }}"; fi
 
           ARTIFACT_BUCKET="${{ vars.CFN_ARTIFACT_BUCKET_PROD }}"
