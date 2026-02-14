@@ -108,3 +108,15 @@ BE担当者がFE側の状況を把握するための参考資料です。
 ## 質問・確認事項があれば
 
 実装中に不明点があれば、壁打ちメモを確認するか、PM（Itsuki）に確認してください。
+
+---
+
+## Additional docs (2026-02-09)
+
+- `BACKEND_CURRENT_ARCHITECTURE.md`
+  - ���݂̃o�b�N�G���h�\���iAWS/���[�J���j
+  - �t�����g�ڑ����ɕK�v�Ȑݒ�Ǝ�������
+- `DB_KEY_DESIGN_DRAFT.md`
+  - Issue #010 ������DynamoDB�L�[�݌v�h���t�g
+- `ISSUE010_IMPLEMENTATION_RECORD_2026-02-09.md`
+  - Issue #010 �̎������e�A�f�v���C�o�܁AAWS�R���\�[���ł̎蓮�m�F�菇

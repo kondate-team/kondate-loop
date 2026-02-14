@@ -23,6 +23,16 @@ import {
   recipeDetailMock,
   recipeSetDetailMock,
 } from "@/data/mockData"
+import { API_USE_MOCK } from "@/api/config"
+import { purchaseContent, registerPaymentMethod } from "@/api/payment"
+import {
+  listCatalogRecipes,
+  listCatalogSets,
+  listRecipeBookRecipes,
+  listRecipeBookSets,
+} from "@/services"
+import { StripeCardInput } from "@/components/StripeCardInput"
+import { Loader2 } from "lucide-react"
 import type { Recipe as ApiRecipe, RecipeSet as ApiRecipeSet, StatusBadge } from "@/types/api"
 import { defaultUnitOptions } from "@/data/unitOptions"
 import { KondateScreen } from "@/screens/KondateScreen"
@@ -381,6 +391,39 @@ export default function App() {
     setShareView({ type, id })
     navigate(type === "recipe" ? "share-recipe" : "share-set", true)
   }, [navigate])
+
+  React.useEffect(() => {
+    if (API_USE_MOCK) return
+    let cancelled = false
+
+    const loadInitialData = async () => {
+      try {
+        const [bookRecipes, bookSets, catalogRecipes, catalogSets] = await Promise.all([
+          listRecipeBookRecipes(),
+          listRecipeBookSets(),
+          listCatalogRecipes(),
+          listCatalogSets(),
+        ])
+
+        if (cancelled) return
+        setMyRecipes(bookRecipes)
+        setMySets(bookSets)
+        setPublicRecipes(catalogRecipes)
+        setPublicSets(catalogSets)
+        setCurrentSet(bookSets[0] ?? null)
+        setNextSet(bookSets[1] ?? null)
+      } catch (error: unknown) {
+        if (cancelled) return
+        console.error("Failed to load initial API data", error)
+        setToastMessage("API data load failed")
+      }
+    }
+
+    void loadInitialData()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const completeLogin = (firstTime?: boolean) => {
     setIsAuthenticated(true)
@@ -1033,8 +1076,8 @@ export default function App() {
     setAccess.hasMembership && !membershipAvailable && !setAccess.hasPrice
       ? "メンバー限定コンテンツは準備中です"
       : setAccess.hasMembership && membershipAvailable
-        ? "加入すると献立表に登録できます"
-        : "購入すると献立表に登録できます"
+        ? "加入するとこんだてに登録できます"
+        : "購入するとこんだてに登録できます"
 
   const setLockedActions =
     setContext === "catalog" ? (
@@ -1182,7 +1225,7 @@ export default function App() {
   const setFooter = (
     <Stack gap="sm">
       <Button className="w-full rounded-full" onClick={applySelectedSet}>
-        献立表に登録する
+        こんだてに登録する
       </Button>
       {setContext === "catalog" ? (
         (() => {
@@ -1373,7 +1416,7 @@ export default function App() {
 
   const handleSelectSet = (setItem: AnySet) => {
     const toast =
-      selectingFor === "next" ? "次の献立に登録しました" : "献立表に登録しました"
+      selectingFor === "next" ? "次のセットに登録しました" : "こんだてに登録しました"
     if (selectingFor === "next") {
       setNextSet(setItem)
     } else {
@@ -1882,7 +1925,7 @@ export default function App() {
             <div className="mt-2 text-sm text-muted-foreground">
               おつかれさま！<br />
               全ての料理を作りました。<br />
-              次の献立を選びましょう。
+              次のセットを選びましょう。
             </div>
             <Button className="mt-5 w-full rounded-full" onClick={completeCurrentSet}>
               閉じる

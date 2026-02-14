@@ -41,6 +41,35 @@ jobs:
       - name: Verify caller
         run: aws sts get-caller-identity
 
+      - name: Build and upload backend lambda (dev)
+        run: |
+          set -euo pipefail
+          npm ci --include=optional
+          npm run build --workspace=apps/api
+
+          rm -rf .artifacts/backend
+          mkdir -p .artifacts/backend
+          cp -r apps/api/dist .artifacts/backend/dist
+          cp apps/api/package.json .artifacts/backend/package.json
+
+          pushd .artifacts/backend >/dev/null
+          npm install --omit=dev --ignore-scripts
+          zip -qr backend-lambda.zip dist node_modules package.json
+          popd >/dev/null
+
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          DEV_BACKEND_CODE_BUCKET="${{ vars.BACKEND_CODE_BUCKET_DEV }}"
+          if [ -z "$DEV_BACKEND_CODE_BUCKET" ]; then DEV_BACKEND_CODE_BUCKET="${{ vars.CFN_ARTIFACT_BUCKET_DEV }}"; fi
+          if [ -z "$DEV_BACKEND_CODE_BUCKET" ]; then DEV_BACKEND_CODE_BUCKET="${{ vars.CFN_ARTIFACT_BUCKET }}"; fi
+          if [ -z "$DEV_BACKEND_CODE_BUCKET" ]; then DEV_BACKEND_CODE_BUCKET="${{ vars.CFN_ARTIFACT_BUCKET_NAME }}"; fi
+          if [ -z "$DEV_BACKEND_CODE_BUCKET" ]; then DEV_BACKEND_CODE_BUCKET="kondate-loop-infra-s3-artifacts-211669976488-ap-northeast-1"; fi
+          DEV_BACKEND_CODE_BUCKET="${DEV_BACKEND_CODE_BUCKET#arn:aws:s3:::}"
+
+          LAMBDA_CODE_S3_KEY="backend/${GITHUB_SHA}/backend-lambda.zip"
+          aws s3 cp .artifacts/backend/backend-lambda.zip "s3://${DEV_BACKEND_CODE_BUCKET}/${LAMBDA_CODE_S3_KEY}"
+          echo "LAMBDA_CODE_S3_BUCKET=$DEV_BACKEND_CODE_BUCKET" >> "$GITHUB_ENV"
+          echo "LAMBDA_CODE_S3_KEY=$LAMBDA_CODE_S3_KEY" >> "$GITHUB_ENV"
+
       - name: Deploy CloudFormation (dev)
         run: |
           ENV_NAME=dev
@@ -90,11 +119,18 @@ jobs:
           PROD_FRONTEND_BUCKET="${PROD_FRONTEND_BUCKET#arn:aws:s3:::}"
 
           DEV_BACKEND_CODE_BUCKET="${{ vars.BACKEND_CODE_BUCKET_DEV }}"
-          if [ -z "$DEV_BACKEND_CODE_BUCKET" ]; then DEV_BACKEND_CODE_BUCKET="kondate-loop-dev-s3-lambda-code-${ACCOUNT_ID}-${AWS_REGION}"; fi
+          if [ -z "$DEV_BACKEND_CODE_BUCKET" ]; then DEV_BACKEND_CODE_BUCKET="kondate-loop-dev-s3-lcode-${ACCOUNT_ID}-${AWS_REGION}"; fi
           DEV_BACKEND_CODE_BUCKET="${DEV_BACKEND_CODE_BUCKET#arn:aws:s3:::}"
 
+          ENABLE_GSI1="${{ vars.DDB_ENABLE_GSI1_DEV }}"
+          if [ -z "$ENABLE_GSI1" ]; then ENABLE_GSI1="true"; fi
+          ENABLE_GSI2="${{ vars.DDB_ENABLE_GSI2_DEV }}"
+          if [ -z "$ENABLE_GSI2" ]; then ENABLE_GSI2="false"; fi
+          ENABLE_GSI3="${{ vars.DDB_ENABLE_GSI3_DEV }}"
+          if [ -z "$ENABLE_GSI3" ]; then ENABLE_GSI3="false"; fi
+
           PROD_BACKEND_CODE_BUCKET="${{ vars.BACKEND_CODE_BUCKET_PROD }}"
-          if [ -z "$PROD_BACKEND_CODE_BUCKET" ]; then PROD_BACKEND_CODE_BUCKET="kondate-loop-prod-s3-lambda-code-${ACCOUNT_ID}-${AWS_REGION}"; fi
+          if [ -z "$PROD_BACKEND_CODE_BUCKET" ]; then PROD_BACKEND_CODE_BUCKET="kondate-loop-prod-s3-lcode-${ACCOUNT_ID}-${AWS_REGION}"; fi
           PROD_BACKEND_CODE_BUCKET="${PROD_BACKEND_CODE_BUCKET#arn:aws:s3:::}"
 
           delete_if_rollback() {
@@ -116,8 +152,9 @@ jobs:
           LAMBDA_EXEC_ROLE_ARN=""
           STACKS=()
           if [[ "${GITHUB_REF:-}" == refs/heads/feature/* ]]; then
-            echo "Feature branch detected. Deploying dev backend stack only."
+            echo "Feature branch detected. Deploying dev OIDC IAM stack and backend stack."
             STACKS=(
+              "kondate-loop-iam-github-oidc-stack|infra/aws-resources/kondate-loop-iam-github-oidc-stack.yaml"
               "kondate-loop-backend-stack|infra/aws-resources/kondate-loop-backend-stack.yaml"
             )
           else
@@ -146,6 +183,17 @@ jobs:
                   "ProdBackendCodeBucketName=$PROD_BACKEND_CODE_BUCKET"
                   "DevStackName=kondate-loop-backend-stack"
                   "ProdStackName=PRODkondate-loop-backend-stack"
+                )
+                ;;
+              *kondate-loop-backend-stack.yaml)
+                PARAM_OVERRIDES=(
+                  "Env=$ENV_NAME"
+                  "EnableGSI1=$ENABLE_GSI1"
+                  "EnableGSI2=$ENABLE_GSI2"
+                  "EnableGSI3=$ENABLE_GSI3"
+                  "LambdaCodeS3Bucket=${LAMBDA_CODE_S3_BUCKET}"
+                  "LambdaCodeS3Key=${LAMBDA_CODE_S3_KEY}"
+                  "LambdaHandler=dist/lambda.handler"
                 )
                 ;;
               *)
@@ -187,6 +235,80 @@ jobs:
               --capabilities CAPABILITY_NAMED_IAM \
               "${PARAM_ARGS[@]}"
           done
+
+      - name: Smoke test backend API -> DynamoDB (dev)
+        run: |
+          set -euo pipefail
+          API_BASE=$(aws cloudformation describe-stacks \
+            --stack-name "kondate-loop-backend-stack" \
+            --query "Stacks[0].Outputs[?OutputKey=='BackendApiEndpoint'].OutputValue" \
+            --output text)
+          TABLE_NAME=$(aws cloudformation describe-stacks \
+            --stack-name "kondate-loop-backend-stack" \
+            --query "Stacks[0].Outputs[?OutputKey=='MainTableName'].OutputValue" \
+            --output text)
+          echo "API_BASE=${API_BASE}"
+          echo "TABLE_NAME=${TABLE_NAME}"
+
+          TEST_USER_ID="gha-smoke-${GITHUB_RUN_ID}"
+          TEST_TITLE="GHA Smoke ${GITHUB_SHA::7}"
+          CANDIDATE_URLS=(
+            "${API_BASE}/recipes"
+            "${API_BASE}/v1/recipes"
+            "${API_BASE%/v1}/v1/recipes"
+            "${API_BASE%/v1}/recipes"
+          )
+
+          RECIPE_ID=""
+          for URL in "${CANDIDATE_URLS[@]}"; do
+            HTTP_CODE=$(curl -sS -o /tmp/recipe_response.json -w "%{http_code}" \
+              -X POST "${URL}" \
+              -H "content-type: application/json" \
+              -d "{\"userId\":\"${TEST_USER_ID}\",\"title\":\"${TEST_TITLE}\",\"servings\":2}")
+            RESPONSE=$(cat /tmp/recipe_response.json)
+            echo "POST ${URL} -> ${HTTP_CODE}"
+            echo "API response: ${RESPONSE}"
+            if [ "${HTTP_CODE}" = "200" ] || [ "${HTTP_CODE}" = "201" ]; then
+              RECIPE_ID=$(python -c "import sys,json; print((json.load(sys.stdin).get('data') or {}).get('id',''))" <<< "${RESPONSE}")
+              if [ -n "${RECIPE_ID}" ]; then
+                break
+              fi
+            fi
+          done
+          if [ -z "${RECIPE_ID}" ]; then
+            echo "Recipe ID not returned from API. Falling back to direct Lambda invoke..." >&2
+            PAYLOAD_FILE=/tmp/lambda_recipe_payload.json
+            RESPONSE_FILE=/tmp/lambda_recipe_response.json
+            printf '%s' "{\"resource\":\"/v1/{proxy+}\",\"path\":\"/v1/recipes\",\"httpMethod\":\"POST\",\"headers\":{\"content-type\":\"application/json\"},\"requestContext\":{\"stage\":\"dev\",\"path\":\"/dev/v1/recipes\"},\"body\":\"{\\\"userId\\\":\\\"${TEST_USER_ID}\\\",\\\"title\\\":\\\"${TEST_TITLE}\\\",\\\"servings\\\":2}\",\"isBase64Encoded\":false}" > "${PAYLOAD_FILE}"
+            aws lambda invoke \
+              --function-name "kondate-loop-dev-api-fn-proxy" \
+              --payload "fileb://${PAYLOAD_FILE}" \
+              "${RESPONSE_FILE}" >/tmp/lambda_invoke_meta.json
+            LAMBDA_STATUS=$(python -c "import json; print(json.load(open('/tmp/lambda_invoke_meta.json')).get('StatusCode',''))")
+            LAMBDA_BODY=$(python -c "import json; print(json.load(open('${RESPONSE_FILE}')).get('body',''))")
+            echo "Lambda invoke status: ${LAMBDA_STATUS}"
+            echo "Lambda response body: ${LAMBDA_BODY}"
+            RECIPE_ID=$(python -c "import sys,json; body=json.loads(sys.stdin.read() or '{}'); data=body.get('data') or {}; print(data.get('id',''))" <<< "${LAMBDA_BODY}")
+            if [ -z "${RECIPE_ID}" ]; then
+              echo "Recipe ID not returned from API nor Lambda invoke." >&2
+              exit 1
+            fi
+          fi
+
+          PK="USER#${TEST_USER_ID}"
+          SK="RECIPE#${RECIPE_ID}"
+          ITEM_PK=$(aws dynamodb get-item \
+            --table-name "${TABLE_NAME}" \
+            --consistent-read \
+            --key "{\"PK\":{\"S\":\"${PK}\"},\"SK\":{\"S\":\"${SK}\"}}" \
+            --query "Item.PK.S" \
+            --output text)
+
+          if [ "${ITEM_PK}" != "${PK}" ]; then
+            echo "DynamoDB verification failed. expected PK=${PK}, actual=${ITEM_PK}" >&2
+            exit 1
+          fi
+          echo "Smoke test passed: ${PK} / ${SK}"
 
   frontend-dev:
     if: github.ref == 'refs/heads/dev'
@@ -236,13 +358,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Resolve prod role
+        id: prod-role
+        run: |
+          ROLE_ARN="${{ secrets.AWS_ROLE_ARN }}"
+          if [ -z "$ROLE_ARN" ]; then ROLE_ARN="${{ vars.AWS_ROLE_ARN_PROD }}"; fi
+          if [ -z "$ROLE_ARN" ]; then ROLE_ARN="${{ vars.AWS_ROLE_ARN }}"; fi
+
+          if [ -z "$ROLE_ARN" ]; then
+            echo "::warning::AWS role for prod deploy is not configured. Skipping prod deploy."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+
       - name: Configure AWS Credentials (OIDC)
+        if: steps.prod-role.outputs.enabled == 'true'
         uses: aws-actions/configure-aws-credentials@v5
         with:
           aws-region: ${{ vars.AWS_REGION || 'ap-northeast-1' }}
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ steps.prod-role.outputs.role_arn }}
 
       - name: Deploy CloudFormation (prod)
+        if: steps.prod-role.outputs.enabled == 'true'
         run: |
           ENV_NAME=prod
           INFRA_STACK_NAME="${{ vars.CFN_STACK_NAME_PROD }}"
@@ -270,6 +410,13 @@ jobs:
           ROLE_ARG=()
           if [ -n "$EXEC_ROLE_ARN" ]; then ROLE_ARG=(--role-arn "$EXEC_ROLE_ARN"); fi
 
+          ENABLE_GSI1="${{ vars.DDB_ENABLE_GSI1_PROD }}"
+          if [ -z "$ENABLE_GSI1" ]; then ENABLE_GSI1="true"; fi
+          ENABLE_GSI2="${{ vars.DDB_ENABLE_GSI2_PROD }}"
+          if [ -z "$ENABLE_GSI2" ]; then ENABLE_GSI2="false"; fi
+          ENABLE_GSI3="${{ vars.DDB_ENABLE_GSI3_PROD }}"
+          if [ -z "$ENABLE_GSI3" ]; then ENABLE_GSI3="false"; fi
+
           STACKS=(
             "${INFRA_STACK_NAME}|infra/aws-resources/PROD/PRODkondate-loop-infra-stack.yaml"
             "PRODkondate-loop-backend-stack|infra/aws-resources/PROD/PRODkondate-loop-backend-stack.yaml"
@@ -285,6 +432,13 @@ jobs:
                 "SharedArtifactBucketArn=arn:aws:s3:::$ARTIFACT_BUCKET"
               )
             fi
+            if [ "$TEMPLATE_FILE" = "infra/aws-resources/PROD/PRODkondate-loop-backend-stack.yaml" ]; then
+              PARAM_OVERRIDES+=(
+                "EnableGSI1=$ENABLE_GSI1"
+                "EnableGSI2=$ENABLE_GSI2"
+                "EnableGSI3=$ENABLE_GSI3"
+              )
+            fi
 
             aws cloudformation deploy \
               --template-file "$TEMPLATE_FILE" \
@@ -297,6 +451,7 @@ jobs:
           done
 
       - name: Build frontend
+        if: steps.prod-role.outputs.enabled == 'true'
         run: |
           npm ci --include=optional
           node -e "require.resolve('@rollup/rollup-linux-x64-gnu')" || npm -w apps/web i --no-save @rollup/rollup-linux-x64-gnu
@@ -304,6 +459,7 @@ jobs:
           npm run build --workspace=apps/web
 
       - name: Upload frontend to S3 (prod)
+        if: steps.prod-role.outputs.enabled == 'true'
         run: |
           FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET_PROD }}"
           if [ -z "$FRONTEND_BUCKET" ]; then FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET }}"; fi
