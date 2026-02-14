@@ -72,3 +72,8 @@
 - Lambda code upload target now falls back to CloudFormation artifacts bucket to avoid backend-code bucket IAM gaps.
 - Backend stack deploy passes `LambdaCodeS3Bucket` + `LambdaCodeS3Key` explicitly.
 - Feature branch deploy now updates `kondate-loop-iam-github-oidc-stack` before backend stack to keep GitHub OIDC role permissions aligned with backend smoke checks.
+
+## Prod credential resolution update (2026-02-14)
+- `prod` job now resolves role ARN in this order: `secrets.AWS_ROLE_ARN` -> `vars.AWS_ROLE_ARN_PROD` -> `vars.AWS_ROLE_ARN`.
+- If no prod role ARN is configured, the workflow logs a warning and skips prod deploy/build/upload steps instead of failing at `configure-aws-credentials`.
+- This allows `main` push (including merge commits from `dev`) to complete successfully even when prod OIDC role settings are not yet configured.
