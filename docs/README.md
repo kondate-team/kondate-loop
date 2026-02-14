@@ -120,3 +120,9 @@ BEæ‹…å½“è€…ãŒFEå´ã®çŠ¶æ³ã‚’æŠŠæ¡ã™ã‚‹ãŸã‚ã®å‚è€ƒè³‡æ–™ã§ã™ã€‚
   - Issue #010 Œü‚¯‚ÌDynamoDBƒL[ÝŒvƒhƒ‰ƒtƒg
 - `ISSUE010_IMPLEMENTATION_RECORD_2026-02-09.md`
   - Issue #010 ‚ÌŽÀ‘•“à—eAƒfƒvƒƒCŒoˆÜAAWSƒRƒ“ƒ\[ƒ‹‚Å‚ÌŽè“®Šm”FŽè‡
+
+## Additional docs (2026-02-14)
+
+- `ISSUE013_BACKEND_API_BUILD_GUIDE.md`
+  - Issue #013: AWS backend API build steps (API Gateway + Lambda + DynamoDB)
+  - CI deploy notes (GitHub Actions + OIDC) and verification checklist
