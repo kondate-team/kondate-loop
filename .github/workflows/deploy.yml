@@ -361,12 +361,10 @@ jobs:
       - name: Resolve prod role
         id: prod-role
         run: |
-          ROLE_ARN="${{ secrets.AWS_ROLE_ARN }}"
-          if [ -z "$ROLE_ARN" ]; then ROLE_ARN="${{ vars.AWS_ROLE_ARN_PROD }}"; fi
-          if [ -z "$ROLE_ARN" ]; then ROLE_ARN="${{ vars.AWS_ROLE_ARN }}"; fi
+          ROLE_ARN="${{ vars.AWS_ROLE_ARN_PROD }}"
 
           if [ -z "$ROLE_ARN" ]; then
-            echo "::warning::AWS role for prod deploy is not configured. Skipping prod deploy."
+            echo "::warning::Repository variable AWS_ROLE_ARN_PROD is not configured. Skipping prod deploy."
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
