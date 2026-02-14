@@ -194,6 +194,7 @@ jobs:
                   "LambdaCodeS3Bucket=${LAMBDA_CODE_S3_BUCKET}"
                   "LambdaCodeS3Key=${LAMBDA_CODE_S3_KEY}"
                   "LambdaHandler=dist/lambda.handler"
+                  "ApiDeploymentVersion=${GITHUB_SHA}"
                 )
                 ;;
               *)
