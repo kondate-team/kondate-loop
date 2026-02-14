@@ -13,9 +13,11 @@
 1. `infra/aws-resources/kondate-loop-backend-stack.yaml`
 - `Parameters` に `ApiDeploymentVersion` を追加。
 - `BackendApiDeployment.Properties.Description` に `deployment-${ApiDeploymentVersion}` を追加。
+- `AWS::ApiGateway::Deployment` から `StageName` を外し、代わりに `AWS::ApiGateway::Stage` を追加（`DeploymentId` を参照）。
 
 2. `infra/aws-resources/PROD/PRODkondate-loop-backend-stack.yaml`
 - dev テンプレートと同様に `ApiDeploymentVersion` と `Description` を追加。
+- dev と同様に `Deployment + Stage` 分離（Stage が常に新 Deployment を参照する形）。
 
 3. `.github/workflows/deploy.yml`
 - backend stack の `PARAM_OVERRIDES` に `ApiDeploymentVersion=${GITHUB_SHA}` を追加。
