@@ -451,10 +451,21 @@ jobs:
       - name: Build frontend
         if: steps.prod-role.outputs.enabled == 'true'
         run: |
-          npm ci --include=optional
-          node -e "require.resolve('@rollup/rollup-linux-x64-gnu')" || npm -w apps/web i --no-save @rollup/rollup-linux-x64-gnu
-          npm run build --workspace=packages/types
-          npm run build --workspace=apps/web
+          set -euo pipefail
+          if [ -f package.json ]; then
+            npm ci --include=optional
+            node -e "require.resolve('@rollup/rollup-linux-x64-gnu')" || npm -w apps/web i --no-save @rollup/rollup-linux-x64-gnu
+            if [ -f packages/types/package.json ]; then
+              npm run build --workspace=packages/types
+            fi
+            npm run build --workspace=apps/web
+          else
+            pushd apps/web >/dev/null
+            npm ci --include=optional
+            node -e "require.resolve('@rollup/rollup-linux-x64-gnu')" || npm i --no-save @rollup/rollup-linux-x64-gnu
+            npm run build
+            popd >/dev/null
+          fi
 
       - name: Upload frontend to S3 (prod)
         if: steps.prod-role.outputs.enabled == 'true'

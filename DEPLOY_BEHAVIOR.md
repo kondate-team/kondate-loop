@@ -77,3 +77,9 @@
 - `prod` job uses only repository variable `AWS_ROLE_ARN_PROD` for OIDC role resolution.
 - If `AWS_ROLE_ARN_PROD` is not configured, the workflow logs a warning and skips prod deploy/build/upload steps instead of failing at `configure-aws-credentials`.
 - This allows `main` push (including merge commits from `dev`) to complete successfully even when prod OIDC role settings are not yet configured.
+
+## Prod frontend build compatibility update (2026-02-14)
+- `prod` frontend build step now supports both repository layouts:
+  - monorepo root with `package.json` (workspace build)
+  - legacy layout without root `package.json` (build in `apps/web` directly)
+- This prevents `npm ci` ENOENT failures on `main` when only `apps/web/package.json` exists.
