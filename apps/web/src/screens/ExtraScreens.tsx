@@ -399,7 +399,7 @@ export function SetSelectScreen({
 
   const title = "レシピセットを選ぶ"
   const recommendationTitle =
-    selectingFor === "next" ? "次の献立におすすめ" : "冷蔵庫の食材で作れるセット"
+    selectingFor === "next" ? "次のセットにおすすめ" : "冷蔵庫の食材で作れるセット"
 
   return (
     <ScreenContainer>

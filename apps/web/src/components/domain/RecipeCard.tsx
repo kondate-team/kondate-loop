@@ -102,7 +102,7 @@ export function RecipeCard({
             ) : null}
             {cooked ? (
               <span className="absolute left-2 top-2 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
-                済
+                作った
               </span>
             ) : null}
           </div>
