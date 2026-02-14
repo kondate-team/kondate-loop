@@ -24,15 +24,12 @@ import {
   recipeSetDetailMock,
 } from "@/data/mockData"
 import { API_USE_MOCK } from "@/api/config"
-import { purchaseContent, registerPaymentMethod } from "@/api/payment"
 import {
   listCatalogRecipes,
   listCatalogSets,
   listRecipeBookRecipes,
   listRecipeBookSets,
 } from "@/services"
-import { StripeCardInput } from "@/components/StripeCardInput"
-import { Loader2 } from "lucide-react"
 import type { Recipe as ApiRecipe, RecipeSet as ApiRecipeSet, StatusBadge } from "@/types/api"
 import { defaultUnitOptions } from "@/data/unitOptions"
 import { KondateScreen } from "@/screens/KondateScreen"
