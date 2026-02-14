@@ -78,6 +78,10 @@
 - If `AWS_ROLE_ARN_PROD` is not configured in either secrets/variables, the workflow logs a warning and skips prod deploy/build/upload steps instead of failing at `configure-aws-credentials`.
 - This allows `main` push (including merge commits from `dev`) to complete successfully even when prod OIDC role settings are not yet configured.
 
+## Prod CloudFormation fallback update (2026-02-14)
+- `prod` infra stack name fallback now uses `PRODkondate-loop-infra-stack` (instead of `kondate-loop-infra-stack-prod`) to match existing production naming.
+- `prod` CloudFormation execution role fallback now also reads `vars.PROD_CFN_EXEC_ROLE_ARN` for backward compatibility with existing repository variable naming.
+
 ## Prod frontend build compatibility update (2026-02-14)
 - `prod` frontend build step now supports both repository layouts:
   - monorepo root with `package.json` (workspace build)
