@@ -12,7 +12,7 @@ AWS / CloudFormation のインフラ賁E��向け README、E
 - Prod templates: aws-resources/PROD/PRODkondate-loop-backend-stack.yaml, aws-resources/PROD/PRODkondate-loop-infra-stack.yaml.
 - Default buckets (if vars unset): dev frontend kondate-loop-dev-s3-web-211669976488-ap-northeast-1, prod frontend kondate-loop-prod-s3-web-211669976488-ap-northeast-1, artifacts kondate-loop-infra-s3-artifacts-211669976488-ap-northeast-1.
 - Backend stack names: dev kondate-loop-backend-stack, prod PRODkondate-loop-backend-stack.
-- API Gateway starts with /v1/{proxy+} (Lambda proxy). After stabilization, expose major endpoints as explicit resources.
+- API Gateway includes /v1/{proxy+} and root /{proxy+} (Lambda proxy). After stabilization, expose major endpoints as explicit resources.
 - Backend Lambda code bucket is created by infra stack and exported as ${SystemId}-${Env}-backend-code-bucket-name.
 
 ## リソース別の“現実的な命名”侁E
