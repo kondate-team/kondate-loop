@@ -37,6 +37,12 @@ interface ShoppingModalProps {
 const normalizeNumberInput = (value: string) =>
   value.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1")
 
+/** 常備品（調味料）判定用の単位リスト */
+const PANTRY_UNITS = ["大さじ", "小さじ", "少々", "適量", "ひとつまみ", "適宜"]
+
+/** 単位が常備品（調味料系）かどうかを判定 */
+const isPantryUnit = (unit: string) => PANTRY_UNITS.some((u) => unit.includes(u))
+
 export function ShoppingModal({
   open,
   onClose,
@@ -54,11 +60,16 @@ export function ShoppingModal({
   const [extraUnit, setExtraUnit] = React.useState("")
   const unitListId = React.useId()
 
-  const sortedItems = [...items].sort((a, b) => {
+  // 常備品（調味料系）と通常食材を分離
+  const regularItems = items.filter((item) => !isPantryUnit(item.unit))
+  const pantryItems = items.filter((item) => isPantryUnit(item.unit))
+
+  // 通常食材をチェック状態でソート（チェック済みは下へ）
+  const sortedRegularItems = [...regularItems].sort((a, b) => {
     if (!!a.checked === !!b.checked) return 0
     return a.checked ? 1 : -1
   })
-  const hasChecked = sortedItems.some((item) => item.checked)
+  const hasChecked = sortedRegularItems.some((item) => item.checked)
 
   const handleAddExtra = () => {
     if (!extraName.trim()) return
@@ -93,11 +104,12 @@ export function ShoppingModal({
         </div>
         <div className="max-h-[70vh] overflow-y-auto px-5 py-4">
           <Stack gap="md">
-            {items.length ? (
+            {/* 買うもの（通常食材）セクション */}
+            {sortedRegularItems.length > 0 ? (
               <>
                 <H2 className="text-xl">買うもの</H2>
                 <Stack gap="sm">
-                  {sortedItems.map((item) => (
+                  {sortedRegularItems.map((item) => (
                     <button
                       key={item.id}
                       type="button"
@@ -152,6 +164,31 @@ export function ShoppingModal({
                 </Stack>
               </>
             ) : null}
+
+            {/* 家にあればOK（常備品・調味料）セクション */}
+            {pantryItems.length > 0 && (
+              <Surface tone="section" density="comfy" className="border-transparent">
+                <Stack gap="sm">
+                  <H3 className="text-base text-muted-foreground">家にあればOK</H3>
+                  <Stack gap="xs">
+                    {pantryItems.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between rounded-md border border-border/50 bg-card/50 px-3 py-2"
+                      >
+                        <span className="text-sm text-foreground/80">
+                          {item.name}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {item.amount}
+                          {item.unit}
+                        </span>
+                      </div>
+                    ))}
+                  </Stack>
+                </Stack>
+              </Surface>
+            )}
 
             <Surface tone="section" density="comfy" className="border-transparent">
               <Stack gap="sm">

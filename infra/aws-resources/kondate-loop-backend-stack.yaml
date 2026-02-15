@@ -302,6 +302,13 @@ Resources:
       - ProxyAnyMethod
     Properties:
       RestApiId: !Ref BackendApi
+      Description: !Sub 'deployment-${ApiDeploymentVersion}'
+
+  BackendApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref BackendApi
+      DeploymentId: !Ref BackendApiDeployment
       StageName: !Ref Env
       Description: !Sub 'deployment-${ApiDeploymentVersion}-${LambdaCodeS3Key}'
 
