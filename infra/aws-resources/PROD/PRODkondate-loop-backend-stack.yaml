@@ -294,7 +294,7 @@ Resources:
       MethodResponses:
         - StatusCode: 200
 
-  BackendApiDeployment:
+  BackendApiDeploymentV2:
     Type: AWS::ApiGateway::Deployment
     DependsOn:
       - RootProxyAnyMethod
@@ -302,14 +302,8 @@ Resources:
       - ProxyAnyMethod
     Properties:
       RestApiId: !Ref BackendApi
-      Description: !Sub 'deployment-${ApiDeploymentVersion}-${LambdaCodeS3Key}'
-
-  BackendApiStage:
-    Type: AWS::ApiGateway::Stage
-    Properties:
-      RestApiId: !Ref BackendApi
-      DeploymentId: !Ref BackendApiDeployment
       StageName: !Ref Env
+      Description: !Sub 'deployment-${ApiDeploymentVersion}-${LambdaCodeS3Key}'
 
   BackendFunctionPermission:
     Type: AWS::Lambda::Permission
