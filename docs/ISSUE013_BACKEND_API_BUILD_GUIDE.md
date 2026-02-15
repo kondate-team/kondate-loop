@@ -10,7 +10,7 @@
 - アプリコード（Lambda 実体）: `apps/api`（TypeScript）
 - デプロイ方式: CloudFormation + GitHub Actions（OIDC）
 - 構成（dev/prod 共通の考え方）
-  - API Gateway (REST): `/v1` と `/v1/{proxy+}` を Lambda プロキシ統合（AWS_PROXY）で 1 本の Lambda に集約
+  - API Gateway (REST): `/v1` と `/v1/{proxy+}`（＋ root `/{proxy+}`）を Lambda プロキシ統合（AWS_PROXY）で 1 本の Lambda に集約
   - Lambda: `kondate-loop-<env>-api-fn-proxy`
   - DynamoDB: `kondate-loop-<env>-data-ddb-main`
 
@@ -111,7 +111,8 @@ API Gateway は `AWS::ApiGateway::Deployment` が更新されないと、ステ�
 
 - `infra/aws-resources/kondate-loop-backend-stack.yaml`
   - `ApiDeploymentVersion` パラメータ
-  - `Deployment + Stage` を分離し、`Description` に `deployment-${ApiDeploymentVersion}` を含める
+  - `AWS::ApiGateway::Deployment` の `Description` に `deployment-${ApiDeploymentVersion}`（必要なら `LambdaCodeS3Key` も）を含めて、デプロイごとに更新させる
+  - それでも反映されない場合は `AWS::ApiGateway::Deployment` の Logical ID を変更して作り直す（例: `BackendApiDeploymentV2`）
 - `.github/workflows/deploy.yml`
   - `ApiDeploymentVersion=${GITHUB_SHA}` を毎回渡す
 
@@ -149,7 +150,7 @@ CI は以下の流れで検証している:
   - `LambdaHandler=dist/lambda.handler` が渡っているか確認
 - API Gateway 経由が 403
   - `ApiDeploymentVersion` が更新されているか確認（デプロイごとに値が変わる必要がある）
-  - CloudFormation の `Deployment` と `Stage` が分離されているテンプレートになっているか確認
+  - CloudFormation の `AWS::ApiGateway::Deployment` が更新されているか（`Description` が変わる/必要なら Logical ID 変更で作り直す）確認
 - GSI の作成/削除で CloudFormation が失敗
   - DynamoDB は 1 回の更新で作れる/消せる GSI が制限されるため、`EnableGSI1/2/3` を段階的に切り替える
 
