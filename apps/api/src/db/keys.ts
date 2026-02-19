@@ -61,6 +61,14 @@ export function skFridgeDeleted(deletedAt: string, itemId: string): string {
   return `${KEY_PREFIX.FRIDGE_DELETED}${deletedAt}#${itemId}`;
 }
 
+export function skCategory(scope: "book" | "catalog", categoryId: string): string {
+  return `${KEY_PREFIX.CATEGORY}${scope}#${categoryId}`;
+}
+
+export function skCookLog(createdAt: string, cookLogId: string): string {
+  return `${KEY_PREFIX.COOKLOG}${createdAt}#${cookLogId}`;
+}
+
 export function gsi1Pk(entityType: string, id: string): string {
   return `ENTITY#${entityType}#${id}`;
 }

@@ -18,6 +18,8 @@ import {
   gsi3SkCreated,
   KEY_PREFIX,
   pkUser,
+  skCategory,
+  skCookLog,
   skFridge,
   skFridgeDeleted,
   skPlan,
@@ -27,6 +29,9 @@ import {
   skShopping,
 } from "./keys";
 import type {
+  CategoryRecord,
+  CategoryScope,
+  CookLogRecord,
   CreateRecipeInput,
   CreateSetInput,
   DataStore,
@@ -147,6 +152,67 @@ export class DynamoDataStore implements DataStore {
 
     const response = await this.docClient.send(new QueryCommand(params));
     return (response.Items as Array<StoredItem<T>> | undefined) ?? [];
+  }
+
+  private async listPublicEntity<T>(entityType: "RECIPE" | "SET"): Promise<Array<StoredItem<T>>> {
+    const items: Array<StoredItem<T>> = [];
+    let lastEvaluatedKey: Record<string, unknown> | undefined;
+
+    do {
+      const response = await this.docClient.send(
+        new ScanCommand({
+          TableName: this.tableName,
+          FilterExpression: "#entityType = :entityType AND #isPublic = :isPublic",
+          ExpressionAttributeNames: {
+            "#entityType": "entityType",
+            "#isPublic": "isPublic",
+          },
+          ExpressionAttributeValues: {
+            ":entityType": entityType,
+            ":isPublic": true,
+          },
+          ExclusiveStartKey: lastEvaluatedKey,
+        })
+      );
+      items.push(...((response.Items as Array<StoredItem<T>> | undefined) ?? []));
+      lastEvaluatedKey = response.LastEvaluatedKey as Record<string, unknown> | undefined;
+    } while (lastEvaluatedKey);
+
+    return items;
+  }
+
+  private async findPublicEntityById<T>(
+    entityType: "RECIPE" | "SET",
+    id: string
+  ): Promise<StoredItem<T> | null> {
+    let lastEvaluatedKey: Record<string, unknown> | undefined;
+
+    do {
+      const response = await this.docClient.send(
+        new ScanCommand({
+          TableName: this.tableName,
+          FilterExpression: "#entityType = :entityType AND #isPublic = :isPublic AND #id = :id",
+          ExpressionAttributeNames: {
+            "#entityType": "entityType",
+            "#isPublic": "isPublic",
+            "#id": "id",
+          },
+          ExpressionAttributeValues: {
+            ":entityType": entityType,
+            ":isPublic": true,
+            ":id": id,
+          },
+          ExclusiveStartKey: lastEvaluatedKey,
+        })
+      );
+
+      const found = (response.Items as Array<StoredItem<T>> | undefined)?.[0];
+      if (found) return found;
+
+      lastEvaluatedKey = response.LastEvaluatedKey as Record<string, unknown> | undefined;
+    } while (lastEvaluatedKey);
+
+    return null;
   }
 
   async upsertUser(userId: string, email: string): Promise<UserRecord> {
@@ -366,6 +432,186 @@ export class DynamoDataStore implements DataStore {
     return true;
   }
 
+  async listCatalogRecipes(): Promise<RecipeRecord[]> {
+    const items = await this.listPublicEntity<RecipeRecord>("RECIPE");
+    return items
+      .map(stripMeta)
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  }
+
+  async listCatalogSets(): Promise<SetRecord[]> {
+    const items = await this.listPublicEntity<SetRecord>("SET");
+    return items
+      .map(stripMeta)
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  }
+
+  async getCatalogRecipe(recipeId: string): Promise<RecipeRecord | null> {
+    const item = await this.findPublicEntityById<RecipeRecord>("RECIPE", recipeId);
+    return item ? stripMeta(item) : null;
+  }
+
+  async getCatalogSet(setId: string): Promise<SetRecord | null> {
+    const item = await this.findPublicEntityById<SetRecord>("SET", setId);
+    return item ? stripMeta(item) : null;
+  }
+
+  async saveCatalogRecipe(userId: string, recipeId: string): Promise<RecipeRecord | null> {
+    const source = await this.getCatalogRecipe(recipeId);
+    if (!source) return null;
+
+    const existing = await this.getRecipe(userId, recipeId);
+    if (existing) return existing;
+
+    const now = nowIso();
+    const copied: RecipeRecord = {
+      ...source,
+      userId,
+      origin: "saved",
+      isSaved: true,
+      isPublic: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await this.put(this.toRecipeItem(copied));
+
+    await this.updateRecipe(source.userId, source.id, {
+      savedCount: (source.savedCount ?? 0) + 1,
+    });
+    return copied;
+  }
+
+  async unsaveCatalogRecipe(userId: string, recipeId: string): Promise<boolean> {
+    const existing = await this.getRecipe(userId, recipeId);
+    if (!existing || existing.origin !== "saved") return false;
+    await this.delete(pkUser(userId), skRecipe(recipeId));
+
+    const source = await this.getCatalogRecipe(recipeId);
+    if (source) {
+      await this.updateRecipe(source.userId, source.id, {
+        savedCount: Math.max(0, (source.savedCount ?? 0) - 1),
+      });
+    }
+    return true;
+  }
+
+  async saveCatalogSet(userId: string, setId: string): Promise<SetRecord | null> {
+    const source = await this.getCatalogSet(setId);
+    if (!source) return null;
+
+    const existing = await this.getSet(userId, setId);
+    if (existing) return existing;
+
+    const now = nowIso();
+    const copied: SetRecord = {
+      ...source,
+      userId,
+      origin: "saved",
+      isSaved: true,
+      isPublic: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await this.put(this.toSetItem(copied));
+
+    await this.updateSet(source.userId, source.id, {
+      savedCount: (source.savedCount ?? 0) + 1,
+    });
+    return copied;
+  }
+
+  async unsaveCatalogSet(userId: string, setId: string): Promise<boolean> {
+    const existing = await this.getSet(userId, setId);
+    if (!existing || existing.origin !== "saved") return false;
+    await this.delete(pkUser(userId), skSet(setId));
+
+    const source = await this.getCatalogSet(setId);
+    if (source) {
+      await this.updateSet(source.userId, source.id, {
+        savedCount: Math.max(0, (source.savedCount ?? 0) - 1),
+      });
+    }
+    return true;
+  }
+
+  async listCategories(userId: string, scope: CategoryScope): Promise<CategoryRecord[]> {
+    const items = await this.queryByPk<CategoryRecord>(pkUser(userId), `${KEY_PREFIX.CATEGORY}${scope}#`);
+    return items
+      .map(stripMeta)
+      .sort((a, b) => a.order - b.order);
+  }
+
+  async createCategory(userId: string, scope: CategoryScope, tagName: string): Promise<CategoryRecord> {
+    const existing = await this.listCategories(userId, scope);
+    const maxOrder = existing.length ? Math.max(...existing.map((category) => category.order)) : 1;
+    const now = nowIso();
+    const category: CategoryRecord = {
+      id: randomUUID(),
+      userId,
+      scope,
+      tagName,
+      order: maxOrder + 1,
+      isDefault: false,
+      isHidden: false,
+      colorTheme: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await this.put({
+      PK: pkUser(userId),
+      SK: skCategory(scope, category.id),
+      entityType: "CATEGORY",
+      ...category,
+    });
+    return category;
+  }
+
+  async updateCategory(
+    userId: string,
+    categoryId: string,
+    patch: Partial<Pick<CategoryRecord, "tagName" | "order" | "isHidden">>
+  ): Promise<CategoryRecord | null> {
+    const categories = await this.queryByPk<CategoryRecord>(pkUser(userId), KEY_PREFIX.CATEGORY);
+    const found = categories.find((item) => item.id === categoryId);
+    if (!found) return null;
+    const updated: CategoryRecord = {
+      ...stripMeta(found),
+      ...patch,
+      updatedAt: nowIso(),
+    };
+    await this.put({
+      PK: pkUser(userId),
+      SK: found.SK,
+      entityType: "CATEGORY",
+      ...updated,
+    });
+    return updated;
+  }
+
+  async deleteCategory(userId: string, categoryId: string): Promise<boolean> {
+    const categories = await this.queryByPk<CategoryRecord>(pkUser(userId), KEY_PREFIX.CATEGORY);
+    const found = categories.find((item) => item.id === categoryId);
+    if (!found) return false;
+    await this.delete(pkUser(userId), found.SK);
+    return true;
+  }
+
+  async listCookLogsByMonth(userId: string, month: string): Promise<CookLogRecord[]> {
+    const logs = await this.queryByPk<CookLogRecord>(pkUser(userId), KEY_PREFIX.COOKLOG);
+    return logs
+      .map(stripMeta)
+      .filter((log) => log.createdAt.startsWith(month))
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  }
+
+  async listCookLogsByDate(userId: string, date: string): Promise<CookLogRecord[]> {
+    const logs = await this.queryByPk<CookLogRecord>(pkUser(userId), KEY_PREFIX.COOKLOG);
+    return logs
+      .map(stripMeta)
+      .filter((log) => log.createdAt.startsWith(date))
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  }
+
   async getPlan(userId: string): Promise<PlanRecord> {
     const current = await this.get<PlanSlotRecord>(pkUser(userId), skPlan("CURRENT"));
     const next = await this.get<PlanSlotRecord>(pkUser(userId), skPlan("NEXT"));
@@ -401,8 +647,25 @@ export class DynamoDataStore implements DataStore {
       if (!slotData) continue;
       const idx = slotData.items.findIndex((item) => item.id === itemId);
       if (idx === -1) continue;
-      slotData.items[idx] = { ...slotData.items[idx], isCooked, cookedAt };
+      const previousItem = slotData.items[idx];
+      slotData.items[idx] = { ...previousItem, isCooked, cookedAt };
       await this.setPlanSlot(userId, slot, slotData);
+      if (!previousItem.isCooked && isCooked && cookedAt) {
+        const cookLog: CookLogRecord = {
+          id: randomUUID(),
+          userId,
+          recipeId: previousItem.recipeId,
+          recipeTitle: previousItem.title,
+          recipeThumbnailUrl: previousItem.thumbnailUrl,
+          createdAt: cookedAt,
+        };
+        await this.put({
+          PK: pkUser(userId),
+          SK: skCookLog(cookedAt, cookLog.id),
+          entityType: "COOK_LOG",
+          ...cookLog,
+        });
+      }
       return { id: itemId, isCooked, cookedAt };
     }
     return null;

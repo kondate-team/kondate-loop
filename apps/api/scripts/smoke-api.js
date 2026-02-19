@@ -95,6 +95,64 @@ async function runSmoke() {
   assert.strictEqual(patchSet.status, 200, "update set failed");
   assert.strictEqual(patchSet.json?.data?.title, "Smoke Set Updated");
 
+  const listCategories = await request("GET", `/v1/categories?userId=${userId}&scope=book`);
+  assert.strictEqual(listCategories.status, 200, "list categories failed");
+  assert.ok(Array.isArray(listCategories.json?.data?.items), "categories list is invalid");
+
+  const createCategory = await request("POST", "/v1/categories", {
+    userId,
+    scope: "book",
+    tagName: "Smoke Category",
+  });
+  assert.strictEqual(createCategory.status, 201, "create category failed");
+  const categoryId = createCategory.json?.data?.id;
+  assert.ok(categoryId, "category id not returned");
+
+  const patchCategory = await request("PATCH", `/v1/categories/${categoryId}`, {
+    userId,
+    isHidden: true,
+  });
+  assert.strictEqual(patchCategory.status, 200, "update category failed");
+  assert.strictEqual(patchCategory.json?.data?.isHidden, true, "category hidden flag not updated");
+
+  const planSelect = await request("POST", "/v1/plan/select-set", {
+    userId,
+    setId,
+    slot: "current",
+  });
+  assert.strictEqual(planSelect.status, 200, "select plan set failed");
+  const planItemId = planSelect.json?.data?.items?.[0]?.id;
+  assert.ok(planItemId, "plan item id not returned");
+
+  const cookItem = await request("PATCH", `/v1/plan/items/${planItemId}`, {
+    userId,
+    isCooked: true,
+  });
+  assert.strictEqual(cookItem.status, 200, "set plan item cooked failed");
+  const cookedAt = cookItem.json?.data?.cookedAt;
+  assert.ok(cookedAt, "cookedAt not returned");
+
+  const cookedDate = String(cookedAt).slice(0, 10);
+  const cookedMonth = String(cookedAt).slice(0, 7);
+
+  const getArchiveMonth = await request(
+    "GET",
+    `/v1/archive?userId=${userId}&month=${encodeURIComponent(cookedMonth)}`
+  );
+  assert.strictEqual(getArchiveMonth.status, 200, "get archive month failed");
+  assert.ok(Array.isArray(getArchiveMonth.json?.data?.days), "archive month days is invalid");
+  assert.ok((getArchiveMonth.json?.data?.totalCount ?? 0) >= 1, "archive month totalCount is invalid");
+
+  const getArchiveDate = await request(
+    "GET",
+    `/v1/archive/${encodeURIComponent(cookedDate)}?userId=${userId}`
+  );
+  assert.strictEqual(getArchiveDate.status, 200, "get archive date failed");
+  assert.ok(Array.isArray(getArchiveDate.json?.data?.logs), "archive date logs is invalid");
+
+  const deleteCategory = await request("DELETE", `/v1/categories/${categoryId}`, { userId });
+  assert.strictEqual(deleteCategory.status, 200, "delete category failed");
+
   const deleteSet = await request("DELETE", `/v1/sets/${setId}`, { userId });
   assert.strictEqual(deleteSet.status, 200, "delete set failed");
 

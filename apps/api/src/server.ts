@@ -1,9 +1,10 @@
-import express from "express";
+﻿import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import Stripe from "stripe";
+import { randomUUID } from "crypto";
 import { createDataStore } from "./db/storeFactory";
-import type { PlanType, UserRecord, UserRole } from "./db/types";
+import type { CategoryRecord, CategoryScope, PlanType, UserRecord, UserRole } from "./db/types";
 
 dotenv.config();
 
@@ -20,10 +21,15 @@ const STRIPE_PRICE_ID_USER_PLUS = process.env.STRIPE_PRICE_ID_USER_PLUS ?? "";
 const STRIPE_PRICE_ID_CREATOR_PLUS = process.env.STRIPE_PRICE_ID_CREATOR_PLUS ?? "";
 const STRIPE_PRICE_ID_CREATOR = process.env.STRIPE_PRICE_ID_CREATOR ?? "";
 const PLATFORM_FEE_PERCENT = Number(process.env.PLATFORM_FEE_PERCENT ?? 10);
+const SHARE_BASE_URL = process.env.SHARE_BASE_URL ?? "https://kondate-loop.com";
 
 const stripe = new Stripe(STRIPE_SECRET_KEY);
 const store = createDataStore();
 export const app = express();
+const DEFAULT_CATEGORY_THEMES: Record<CategoryScope, string[]> = {
+  book: ["muted", "amber"],
+  catalog: ["muted", "sky"],
+};
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -64,6 +70,10 @@ function toMeResponse(user: UserRecord) {
   };
 }
 
+function buildShareUrl(targetType: "recipe" | "set", targetId: string): string {
+  return `${SHARE_BASE_URL}/share/${targetType}/${targetId}`;
+}
+
 function truncate(text: string, max: number): string {
   return text.length > max ? text.slice(0, max) : text;
 }
@@ -97,6 +107,35 @@ function parseImportDraft(type: "url" | "text", content: string) {
     source: type,
     confidence: type === "text" && lines.length >= 3 ? "medium" : "low",
   };
+}
+
+function resolveCategoryScope(value: unknown): CategoryScope | null {
+  return value === "book" || value === "catalog" ? value : null;
+}
+
+function isValidMonth(month: string): boolean {
+  return /^\d{4}-\d{2}$/.test(month);
+}
+
+function isValidDate(date: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(date);
+}
+
+function buildDefaultCategories(userId: string, scope: CategoryScope): CategoryRecord[] {
+  const now = nowIso();
+  const labels = scope === "book" ? ["All", "Main"] : ["All", "Featured"];
+  return labels.map((tagName, index) => ({
+    id: `default-${scope}-${index}`,
+    userId,
+    scope,
+    tagName,
+    order: index,
+    isDefault: true,
+    isHidden: false,
+    colorTheme: DEFAULT_CATEGORY_THEMES[scope][index] ?? null,
+    createdAt: now,
+    updatedAt: now,
+  }));
 }
 
 app.post(
@@ -753,6 +792,397 @@ app.delete("/v1/sets/:id", async (req, res) => {
   }
 });
 
+// catalog
+app.get("/v1/catalog/recipes", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const [items, ownRecipes] = await Promise.all([
+      store.listCatalogRecipes(),
+      store.listRecipes(userId),
+    ]);
+    const savedIds = new Set(ownRecipes.filter((recipe) => recipe.origin === "saved").map((recipe) => recipe.id));
+    const annotated = items.map((item) => ({ ...item, isSaved: savedIds.has(item.id) }));
+    return res.json({ data: { items: annotated } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.get("/v1/catalog/sets", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const [items, ownSets] = await Promise.all([store.listCatalogSets(), store.listSets(userId)]);
+    const savedIds = new Set(ownSets.filter((set) => set.origin === "saved").map((set) => set.id));
+    const annotated = items.map((item) => ({ ...item, isSaved: savedIds.has(item.id) }));
+    return res.json({ data: { items: annotated } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.get("/v1/catalog/recipes/:id", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const [item, own] = await Promise.all([
+      store.getCatalogRecipe(req.params.id),
+      store.getRecipe(userId, req.params.id),
+    ]);
+    if (!item) return res.status(404).json({ error: "Catalog recipe not found" });
+    return res.json({ data: { ...item, isSaved: own?.origin === "saved" } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.get("/v1/catalog/sets/:id", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const [item, own] = await Promise.all([
+      store.getCatalogSet(req.params.id),
+      store.getSet(userId, req.params.id),
+    ]);
+    if (!item) return res.status(404).json({ error: "Catalog set not found" });
+    return res.json({ data: { ...item, isSaved: own?.origin === "saved" } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.post("/v1/catalog/recipes/:id/save", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const saved = await store.saveCatalogRecipe(userId, req.params.id);
+    if (!saved) return res.status(404).json({ error: "Catalog recipe not found" });
+    return res.json({ data: { recipeId: saved.id, saved: true } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.delete("/v1/catalog/recipes/:id/save", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const unsaved = await store.unsaveCatalogRecipe(userId, req.params.id);
+    if (!unsaved) return res.status(404).json({ error: "Saved catalog recipe not found" });
+    return res.json({ data: { recipeId: req.params.id, saved: false } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.post("/v1/catalog/sets/:id/save", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const saved = await store.saveCatalogSet(userId, req.params.id);
+    if (!saved) return res.status(404).json({ error: "Catalog set not found" });
+    return res.json({ data: { setId: saved.id, saved: true } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.delete("/v1/catalog/sets/:id/save", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const unsaved = await store.unsaveCatalogSet(userId, req.params.id);
+    if (!unsaved) return res.status(404).json({ error: "Saved catalog set not found" });
+    return res.json({ data: { setId: req.params.id, saved: false } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.post("/v1/catalog/recipes/:id/purchase", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const saved = await store.saveCatalogRecipe(userId, req.params.id);
+    if (!saved) return res.status(404).json({ error: "Catalog recipe not found" });
+    return res.json({
+      data: {
+        purchaseId: randomUUID(),
+        itemType: "recipe",
+        itemId: saved.id,
+        amount: 680,
+        currency: "JPY",
+        status: "succeeded",
+        purchasedAt: nowIso(),
+      },
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.post("/v1/catalog/sets/:id/purchase", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const saved = await store.saveCatalogSet(userId, req.params.id);
+    if (!saved) return res.status(404).json({ error: "Catalog set not found" });
+    return res.json({
+      data: {
+        purchaseId: randomUUID(),
+        itemType: "set",
+        itemId: saved.id,
+        amount: 1980,
+        currency: "JPY",
+        status: "succeeded",
+        purchasedAt: nowIso(),
+      },
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+// share
+app.post("/v1/share", async (req, res) => {
+  try {
+    const { targetType, targetId, authorName, sourceUrl } = req.body ?? {};
+    if ((targetType !== "recipe" && targetType !== "set") || typeof targetId !== "string") {
+      return res.status(400).json({ error: "targetType(recipe|set) and targetId are required" });
+    }
+
+    if (targetType === "recipe") {
+      const recipe = await store.getCatalogRecipe(targetId);
+      if (!recipe) return res.status(404).json({ error: "Catalog recipe not found" });
+      return res.json({
+        data: {
+          shareUrl: buildShareUrl("recipe", recipe.id),
+          targetType: "recipe",
+          targetId: recipe.id,
+          authorName: authorName ?? recipe.authorName ?? null,
+          sourceUrl: sourceUrl ?? recipe.sourceUrl ?? null,
+        },
+      });
+    }
+
+    const set = await store.getCatalogSet(targetId);
+    if (!set) return res.status(404).json({ error: "Catalog set not found" });
+    return res.json({
+      data: {
+        shareUrl: buildShareUrl("set", set.id),
+        targetType: "set",
+        targetId: set.id,
+        authorName: authorName ?? set.authorName ?? null,
+        sourceUrl: sourceUrl ?? null,
+      },
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.get("/v1/share/recipe/:id", async (req, res) => {
+  try {
+    const recipe = await store.getCatalogRecipe(req.params.id);
+    if (!recipe) return res.status(404).json({ error: "Shared recipe not found" });
+    return res.json({
+      data: {
+        id: recipe.id,
+        title: recipe.title,
+        authorName: recipe.authorName,
+        sourceUrl: recipe.sourceUrl,
+        thumbnailUrl: recipe.thumbnailUrl,
+        servings: recipe.servings,
+        cookTimeMinutes: recipe.cookTimeMinutes,
+        ingredients: recipe.ingredients,
+        steps: recipe.steps,
+        tags: recipe.tags,
+      },
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.get("/v1/share/set/:id", async (req, res) => {
+  try {
+    const set = await store.getCatalogSet(req.params.id);
+    if (!set) return res.status(404).json({ error: "Shared set not found" });
+    return res.json({
+      data: {
+        id: set.id,
+        title: set.title,
+        authorName: set.authorName,
+        description: set.description,
+        thumbnailUrl: set.thumbnailUrl,
+        recipeIds: set.recipeIds,
+        tags: set.tags,
+      },
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+// categories
+app.get("/v1/categories", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const scope = resolveCategoryScope(req.query.scope);
+    if (!scope) {
+      return res.status(400).json({ error: "scope(book|catalog) is required" });
+    }
+    const defaults = buildDefaultCategories(userId, scope);
+    const customItems = await store.listCategories(userId, scope);
+    const items = [...defaults, ...customItems].sort((a, b) => a.order - b.order);
+    return res.json({ data: { items } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.post("/v1/categories", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const scope = resolveCategoryScope(req.body?.scope);
+    const rawTagName = typeof req.body?.tagName === "string" ? req.body.tagName.trim() : "";
+    if (!scope || !rawTagName) {
+      return res.status(400).json({ error: "scope(book|catalog) and tagName are required" });
+    }
+    if (rawTagName.length > 30) {
+      return res.status(400).json({ error: "tagName must be 30 characters or less" });
+    }
+    const category = await store.createCategory(userId, scope, rawTagName);
+    return res.status(201).json({ data: category });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.patch("/v1/categories/:id", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const categoryId = req.params.id;
+    if (categoryId.startsWith("default-")) {
+      return res.status(400).json({ error: "Default category cannot be updated" });
+    }
+
+    const patch: { tagName?: string; order?: number; isHidden?: boolean } = {};
+    if (req.body?.tagName !== undefined) {
+      if (typeof req.body.tagName !== "string" || !req.body.tagName.trim()) {
+        return res.status(400).json({ error: "tagName must be a non-empty string" });
+      }
+      if (req.body.tagName.trim().length > 30) {
+        return res.status(400).json({ error: "tagName must be 30 characters or less" });
+      }
+      patch.tagName = req.body.tagName.trim();
+    }
+    if (req.body?.order !== undefined) {
+      if (!Number.isInteger(req.body.order) || req.body.order < 0) {
+        return res.status(400).json({ error: "order must be a non-negative integer" });
+      }
+      patch.order = req.body.order;
+    }
+    if (req.body?.isHidden !== undefined) {
+      if (typeof req.body.isHidden !== "boolean") {
+        return res.status(400).json({ error: "isHidden must be boolean" });
+      }
+      patch.isHidden = req.body.isHidden;
+    }
+
+    if (Object.keys(patch).length === 0) {
+      return res.status(400).json({ error: "tagName, order, or isHidden is required" });
+    }
+
+    const updated = await store.updateCategory(userId, categoryId, patch);
+    if (!updated) return res.status(404).json({ error: "Category not found" });
+    return res.json({ data: updated });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.delete("/v1/categories/:id", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const categoryId = req.params.id;
+    if (categoryId.startsWith("default-")) {
+      return res.status(400).json({ error: "Default category cannot be deleted" });
+    }
+    const deleted = await store.deleteCategory(userId, categoryId);
+    if (!deleted) return res.status(404).json({ error: "Category not found" });
+    return res.json({ data: { id: categoryId, deleted: true } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+// archive
+app.get("/v1/archive", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const month = typeof req.query.month === "string" ? req.query.month : "";
+    if (!isValidMonth(month)) {
+      return res.status(400).json({ error: "month(YYYY-MM) is required" });
+    }
+
+    const logs = await store.listCookLogsByMonth(userId, month);
+    const dailyCount = new Map<string, number>();
+    for (const log of logs) {
+      const date = log.createdAt.slice(0, 10);
+      dailyCount.set(date, (dailyCount.get(date) ?? 0) + 1);
+    }
+    const days = Array.from(dailyCount.entries())
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .map(([date, count]) => ({ date, count, hasLogs: count > 0 }));
+
+    return res.json({
+      data: {
+        month,
+        days,
+        totalCount: logs.length,
+      },
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.get("/v1/archive/:date", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const date = req.params.date;
+    if (!isValidDate(date)) {
+      return res.status(400).json({ error: "date(YYYY-MM-DD) is required" });
+    }
+    const logs = await store.listCookLogsByDate(userId, date);
+    return res.json({
+      data: {
+        date,
+        logs: logs.map((log) => ({
+          id: log.id,
+          recipeId: log.recipeId,
+          recipeTitle: log.recipeTitle,
+          recipeThumbnailUrl: log.recipeThumbnailUrl,
+          createdAt: log.createdAt,
+        })),
+      },
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
 // plan
 app.get("/v1/plan", async (req, res) => {
   try {
@@ -991,3 +1421,4 @@ if (!process.env.AWS_LAMBDA_FUNCTION_NAME) {
     console.log(`========================================\n`);
   });
 }
+
