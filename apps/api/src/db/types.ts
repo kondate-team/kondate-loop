@@ -1,8 +1,14 @@
 export type PlanType = "free" | "user_plus" | "creator_plus" | "creator";
+export type UserRole = "user" | "user_plus" | "creator" | "creator_plus";
 
 export type UserRecord = {
   userId: string;
   email: string;
+  name?: string | null;
+  role?: UserRole;
+  avatarUrl?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
   stripeCustomerId?: string;
   stripeDefaultPaymentMethodId?: string;
   stripeSubscriptionId?: string;

@@ -3,7 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import Stripe from "stripe";
 import { createDataStore } from "./db/storeFactory";
-import type { PlanType } from "./db/types";
+import type { PlanType, UserRecord, UserRole } from "./db/types";
 
 dotenv.config();
 
@@ -34,6 +34,34 @@ function resolveUserId(req: express.Request): string {
   const queryUserId = typeof req.query?.userId === "string" ? req.query.userId : "";
   const headerUserId = typeof req.headers["x-user-id"] === "string" ? req.headers["x-user-id"] : "";
   return bodyUserId || queryUserId || headerUserId || "demo-user";
+}
+
+function resolveUserEmail(req: express.Request, userId: string): string {
+  const bodyEmail = typeof req.body?.email === "string" ? req.body.email : "";
+  const queryEmail = typeof req.query?.email === "string" ? req.query.email : "";
+  const headerEmail =
+    typeof req.headers["x-user-email"] === "string" ? req.headers["x-user-email"] : "";
+  return bodyEmail || queryEmail || headerEmail || `${userId}@example.com`;
+}
+
+function resolveUserRole(user: UserRecord): UserRole {
+  if (user.role) return user.role;
+  if (user.plan === "creator_plus") return "creator_plus";
+  if (user.plan === "creator") return "creator";
+  if (user.plan === "user_plus") return "user_plus";
+  return "user";
+}
+
+function toMeResponse(user: UserRecord) {
+  return {
+    id: user.userId,
+    email: user.email,
+    name: user.name ?? null,
+    role: resolveUserRole(user),
+    avatarUrl: user.avatarUrl ?? null,
+    createdAt: user.createdAt ?? null,
+    updatedAt: user.updatedAt ?? null,
+  };
 }
 
 app.post(
@@ -123,6 +151,58 @@ app.use(cors({ origin: CORS_ORIGIN, credentials: true }));
 app.use(express.json());
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
+
+app.get("/v1/auth/me", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const email = resolveUserEmail(req, userId);
+    let user = await store.getUser(userId);
+    if (!user) {
+      user = await store.upsertUser(userId, email);
+    } else if (!user.email) {
+      user = (await store.updateUser(userId, { email })) ?? user;
+    }
+    return res.json({ data: toMeResponse(user) });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.patch("/v1/me", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const email = resolveUserEmail(req, userId);
+    const { name, avatarUrl } = req.body ?? {};
+    if (name === undefined && avatarUrl === undefined) {
+      return res.status(400).json({ error: "name or avatarUrl is required" });
+    }
+    if (name !== undefined && (typeof name !== "string" || !name.trim() || name.trim().length > 50)) {
+      return res.status(400).json({ error: "name must be a non-empty string up to 50 chars" });
+    }
+    if (
+      avatarUrl !== undefined &&
+      avatarUrl !== null &&
+      (typeof avatarUrl !== "string" || avatarUrl.length > 500)
+    ) {
+      return res.status(400).json({ error: "avatarUrl must be string, null, or omitted" });
+    }
+
+    let user = await store.getUser(userId);
+    if (!user) {
+      user = await store.upsertUser(userId, email);
+    }
+    const updated = await store.updateUser(userId, {
+      name: name !== undefined ? name.trim() : user.name,
+      avatarUrl: avatarUrl !== undefined ? avatarUrl : user.avatarUrl,
+    });
+    if (!updated) return res.status(500).json({ error: "Failed to update user profile" });
+    return res.json({ data: toMeResponse(updated) });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
 
 // payment / subscription / connect
 app.post("/v1/payment-methods", async (req, res) => {

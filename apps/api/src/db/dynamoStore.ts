@@ -151,9 +151,15 @@ export class DynamoDataStore implements DataStore {
 
   async upsertUser(userId: string, email: string): Promise<UserRecord> {
     const existing = await this.getUser(userId);
+    const now = nowIso();
     const next: UserRecord = {
       userId,
       email,
+      name: existing?.name ?? null,
+      role: existing?.role ?? "user",
+      avatarUrl: existing?.avatarUrl ?? null,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
       plan: existing?.plan ?? "free",
       subscriptionStatus: existing?.subscriptionStatus ?? "none",
       stripeCustomerId: existing?.stripeCustomerId,
@@ -181,7 +187,7 @@ export class DynamoDataStore implements DataStore {
   async updateUser(userId: string, patch: Partial<UserRecord>): Promise<UserRecord | null> {
     const existing = await this.getUser(userId);
     if (!existing) return null;
-    const next: UserRecord = { ...existing, ...patch };
+    const next: UserRecord = { ...existing, ...patch, updatedAt: nowIso() };
     await this.put({
       PK: pkUser(userId),
       SK: skProfile(),

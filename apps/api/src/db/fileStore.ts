@@ -97,9 +97,15 @@ export class FileDataStore implements DataStore {
   async upsertUser(userId: string, email: string): Promise<UserRecord> {
     const store = await this.readStore();
     const existing = store.users[userId];
+    const now = nowIso();
     const next: UserRecord = {
       userId,
       email,
+      name: existing?.name ?? null,
+      role: existing?.role ?? "user",
+      avatarUrl: existing?.avatarUrl ?? null,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
       plan: existing?.plan ?? "free",
       subscriptionStatus: existing?.subscriptionStatus ?? "none",
       stripeCustomerId: existing?.stripeCustomerId,
@@ -122,7 +128,7 @@ export class FileDataStore implements DataStore {
     const store = await this.readStore();
     const existing = store.users[userId];
     if (!existing) return null;
-    const next = { ...existing, ...patch };
+    const next = { ...existing, ...patch, updatedAt: nowIso() };
     store.users[userId] = next;
     await this.writeStore(store);
     return next;
