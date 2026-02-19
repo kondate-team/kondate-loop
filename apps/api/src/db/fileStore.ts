@@ -262,6 +262,142 @@ export class FileDataStore implements DataStore {
     return true;
   }
 
+  async listCatalogRecipes(): Promise<RecipeRecord[]> {
+    const store = await this.readStore();
+    return Object.values(store.recipes)
+      .filter((recipe) => recipe.isPublic)
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  }
+
+  async listCatalogSets(): Promise<SetRecord[]> {
+    const store = await this.readStore();
+    return Object.values(store.sets)
+      .filter((set) => set.isPublic)
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  }
+
+  async getCatalogRecipe(recipeId: string): Promise<RecipeRecord | null> {
+    const store = await this.readStore();
+    return (
+      Object.values(store.recipes).find((recipe) => recipe.id === recipeId && recipe.isPublic) ?? null
+    );
+  }
+
+  async getCatalogSet(setId: string): Promise<SetRecord | null> {
+    const store = await this.readStore();
+    return Object.values(store.sets).find((set) => set.id === setId && set.isPublic) ?? null;
+  }
+
+  async saveCatalogRecipe(userId: string, recipeId: string): Promise<RecipeRecord | null> {
+    const store = await this.readStore();
+    const source = Object.values(store.recipes).find(
+      (recipe) => recipe.id === recipeId && recipe.isPublic
+    );
+    if (!source) return null;
+
+    const ownKey = key(userId, recipeId);
+    const existing = store.recipes[ownKey];
+    if (existing) return existing;
+
+    const now = nowIso();
+    const copied: RecipeRecord = {
+      ...source,
+      userId,
+      origin: "saved",
+      isSaved: true,
+      isPublic: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    store.recipes[ownKey] = copied;
+
+    const sourceKey = key(source.userId, source.id);
+    const sourceCurrent = store.recipes[sourceKey];
+    if (sourceCurrent) {
+      sourceCurrent.savedCount = (sourceCurrent.savedCount ?? 0) + 1;
+      sourceCurrent.updatedAt = now;
+      store.recipes[sourceKey] = sourceCurrent;
+    }
+
+    await this.writeStore(store);
+    return copied;
+  }
+
+  async unsaveCatalogRecipe(userId: string, recipeId: string): Promise<boolean> {
+    const store = await this.readStore();
+    const ownKey = key(userId, recipeId);
+    const existing = store.recipes[ownKey];
+    if (!existing || existing.origin !== "saved") return false;
+    delete store.recipes[ownKey];
+
+    const sourceEntry = Object.entries(store.recipes).find(
+      ([entryKey, recipe]) => recipe.id === recipeId && recipe.isPublic && entryKey !== ownKey
+    );
+    if (sourceEntry) {
+      const [sourceKey, sourceRecipe] = sourceEntry;
+      sourceRecipe.savedCount = Math.max(0, (sourceRecipe.savedCount ?? 0) - 1);
+      sourceRecipe.updatedAt = nowIso();
+      store.recipes[sourceKey] = sourceRecipe;
+    }
+
+    await this.writeStore(store);
+    return true;
+  }
+
+  async saveCatalogSet(userId: string, setId: string): Promise<SetRecord | null> {
+    const store = await this.readStore();
+    const source = Object.values(store.sets).find((set) => set.id === setId && set.isPublic);
+    if (!source) return null;
+
+    const ownKey = key(userId, setId);
+    const existing = store.sets[ownKey];
+    if (existing) return existing;
+
+    const now = nowIso();
+    const copied: SetRecord = {
+      ...source,
+      userId,
+      origin: "saved",
+      isSaved: true,
+      isPublic: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    store.sets[ownKey] = copied;
+
+    const sourceKey = key(source.userId, source.id);
+    const sourceCurrent = store.sets[sourceKey];
+    if (sourceCurrent) {
+      sourceCurrent.savedCount = (sourceCurrent.savedCount ?? 0) + 1;
+      sourceCurrent.updatedAt = now;
+      store.sets[sourceKey] = sourceCurrent;
+    }
+
+    await this.writeStore(store);
+    return copied;
+  }
+
+  async unsaveCatalogSet(userId: string, setId: string): Promise<boolean> {
+    const store = await this.readStore();
+    const ownKey = key(userId, setId);
+    const existing = store.sets[ownKey];
+    if (!existing || existing.origin !== "saved") return false;
+    delete store.sets[ownKey];
+
+    const sourceEntry = Object.entries(store.sets).find(
+      ([entryKey, set]) => set.id === setId && set.isPublic && entryKey !== ownKey
+    );
+    if (sourceEntry) {
+      const [sourceKey, sourceSet] = sourceEntry;
+      sourceSet.savedCount = Math.max(0, (sourceSet.savedCount ?? 0) - 1);
+      sourceSet.updatedAt = nowIso();
+      store.sets[sourceKey] = sourceSet;
+    }
+
+    await this.writeStore(store);
+    return true;
+  }
+
   async getPlan(userId: string): Promise<PlanRecord> {
     const store = await this.readStore();
     return store.plans[userId] ?? { ...DEFAULT_PLAN };

@@ -138,6 +138,14 @@ export type DataStore = {
   getSet(userId: string, setId: string): Promise<SetRecord | null>;
   updateSet(userId: string, setId: string, patch: Partial<SetRecord>): Promise<SetRecord | null>;
   deleteSet(userId: string, setId: string): Promise<boolean>;
+  listCatalogRecipes(): Promise<RecipeRecord[]>;
+  listCatalogSets(): Promise<SetRecord[]>;
+  getCatalogRecipe(recipeId: string): Promise<RecipeRecord | null>;
+  getCatalogSet(setId: string): Promise<SetRecord | null>;
+  saveCatalogRecipe(userId: string, recipeId: string): Promise<RecipeRecord | null>;
+  unsaveCatalogRecipe(userId: string, recipeId: string): Promise<boolean>;
+  saveCatalogSet(userId: string, setId: string): Promise<SetRecord | null>;
+  unsaveCatalogSet(userId: string, setId: string): Promise<boolean>;
 
   getPlan(userId: string): Promise<PlanRecord>;
   setPlanSlot(userId: string, slot: "current" | "next", data: PlanSlotRecord): Promise<PlanSlotRecord>;
