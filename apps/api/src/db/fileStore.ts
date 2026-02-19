@@ -279,6 +279,16 @@ export class FileDataStore implements DataStore {
     return data;
   }
 
+  async clearPlanSlot(userId: string, slot: "current" | "next"): Promise<void> {
+    const store = await this.readStore();
+    const existing = store.plans[userId] ?? { ...DEFAULT_PLAN };
+    store.plans[userId] = {
+      ...existing,
+      [slot]: null,
+    };
+    await this.writeStore(store);
+  }
+
   async updatePlanItemCooked(
     userId: string,
     itemId: string,
@@ -344,6 +354,16 @@ export class FileDataStore implements DataStore {
     store.shopping[userId] = list;
     await this.writeStore(store);
     return next;
+  }
+
+  async deleteShoppingItem(userId: string, itemId: string): Promise<boolean> {
+    const store = await this.readStore();
+    const list = store.shopping[userId] ?? [];
+    const next = list.filter((item) => item.id !== itemId);
+    if (next.length === list.length) return false;
+    store.shopping[userId] = next;
+    await this.writeStore(store);
+    return true;
   }
 
   async completeShopping(userId: string): Promise<{ movedToFridge: number; remaining: number }> {
