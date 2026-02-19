@@ -50,6 +50,21 @@ export type SetRecord = {
   updatedAt: string;
 };
 
+export type CategoryScope = "book" | "catalog";
+
+export type CategoryRecord = {
+  id: string;
+  userId: string;
+  scope: CategoryScope;
+  tagName: string;
+  order: number;
+  isDefault: boolean;
+  isHidden: boolean;
+  colorTheme: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type PlanItemRecord = {
   id: string;
   recipeId: string;
@@ -69,6 +84,15 @@ export type PlanSlotRecord = {
 export type PlanRecord = {
   current: PlanSlotRecord | null;
   next: PlanSlotRecord | null;
+};
+
+export type CookLogRecord = {
+  id: string;
+  userId: string;
+  recipeId: string;
+  recipeTitle: string;
+  recipeThumbnailUrl: string | null;
+  createdAt: string;
 };
 
 export type ShoppingItemRecord = {
@@ -146,6 +170,16 @@ export type DataStore = {
   unsaveCatalogRecipe(userId: string, recipeId: string): Promise<boolean>;
   saveCatalogSet(userId: string, setId: string): Promise<SetRecord | null>;
   unsaveCatalogSet(userId: string, setId: string): Promise<boolean>;
+  listCategories(userId: string, scope: CategoryScope): Promise<CategoryRecord[]>;
+  createCategory(userId: string, scope: CategoryScope, tagName: string): Promise<CategoryRecord>;
+  updateCategory(
+    userId: string,
+    categoryId: string,
+    patch: Partial<Pick<CategoryRecord, "tagName" | "order" | "isHidden">>
+  ): Promise<CategoryRecord | null>;
+  deleteCategory(userId: string, categoryId: string): Promise<boolean>;
+  listCookLogsByMonth(userId: string, month: string): Promise<CookLogRecord[]>;
+  listCookLogsByDate(userId: string, date: string): Promise<CookLogRecord[]>;
 
   getPlan(userId: string): Promise<PlanRecord>;
   setPlanSlot(userId: string, slot: "current" | "next", data: PlanSlotRecord): Promise<PlanSlotRecord>;

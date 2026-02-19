@@ -18,6 +18,8 @@ import {
   gsi3SkCreated,
   KEY_PREFIX,
   pkUser,
+  skCategory,
+  skCookLog,
   skFridge,
   skFridgeDeleted,
   skPlan,
@@ -27,6 +29,9 @@ import {
   skShopping,
 } from "./keys";
 import type {
+  CategoryRecord,
+  CategoryScope,
+  CookLogRecord,
   CreateRecipeInput,
   CreateSetInput,
   DataStore,
@@ -523,6 +528,84 @@ export class DynamoDataStore implements DataStore {
     return true;
   }
 
+  async listCategories(userId: string, scope: CategoryScope): Promise<CategoryRecord[]> {
+    const items = await this.queryByPk<CategoryRecord>(pkUser(userId), `${KEY_PREFIX.CATEGORY}${scope}#`);
+    return items
+      .map(stripMeta)
+      .sort((a, b) => a.order - b.order);
+  }
+
+  async createCategory(userId: string, scope: CategoryScope, tagName: string): Promise<CategoryRecord> {
+    const existing = await this.listCategories(userId, scope);
+    const maxOrder = existing.length ? Math.max(...existing.map((category) => category.order)) : 1;
+    const now = nowIso();
+    const category: CategoryRecord = {
+      id: randomUUID(),
+      userId,
+      scope,
+      tagName,
+      order: maxOrder + 1,
+      isDefault: false,
+      isHidden: false,
+      colorTheme: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await this.put({
+      PK: pkUser(userId),
+      SK: skCategory(scope, category.id),
+      entityType: "CATEGORY",
+      ...category,
+    });
+    return category;
+  }
+
+  async updateCategory(
+    userId: string,
+    categoryId: string,
+    patch: Partial<Pick<CategoryRecord, "tagName" | "order" | "isHidden">>
+  ): Promise<CategoryRecord | null> {
+    const categories = await this.queryByPk<CategoryRecord>(pkUser(userId), KEY_PREFIX.CATEGORY);
+    const found = categories.find((item) => item.id === categoryId);
+    if (!found) return null;
+    const updated: CategoryRecord = {
+      ...stripMeta(found),
+      ...patch,
+      updatedAt: nowIso(),
+    };
+    await this.put({
+      PK: pkUser(userId),
+      SK: found.SK,
+      entityType: "CATEGORY",
+      ...updated,
+    });
+    return updated;
+  }
+
+  async deleteCategory(userId: string, categoryId: string): Promise<boolean> {
+    const categories = await this.queryByPk<CategoryRecord>(pkUser(userId), KEY_PREFIX.CATEGORY);
+    const found = categories.find((item) => item.id === categoryId);
+    if (!found) return false;
+    await this.delete(pkUser(userId), found.SK);
+    return true;
+  }
+
+  async listCookLogsByMonth(userId: string, month: string): Promise<CookLogRecord[]> {
+    const logs = await this.queryByPk<CookLogRecord>(pkUser(userId), KEY_PREFIX.COOKLOG);
+    return logs
+      .map(stripMeta)
+      .filter((log) => log.createdAt.startsWith(month))
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  }
+
+  async listCookLogsByDate(userId: string, date: string): Promise<CookLogRecord[]> {
+    const logs = await this.queryByPk<CookLogRecord>(pkUser(userId), KEY_PREFIX.COOKLOG);
+    return logs
+      .map(stripMeta)
+      .filter((log) => log.createdAt.startsWith(date))
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  }
+
   async getPlan(userId: string): Promise<PlanRecord> {
     const current = await this.get<PlanSlotRecord>(pkUser(userId), skPlan("CURRENT"));
     const next = await this.get<PlanSlotRecord>(pkUser(userId), skPlan("NEXT"));
@@ -558,8 +641,25 @@ export class DynamoDataStore implements DataStore {
       if (!slotData) continue;
       const idx = slotData.items.findIndex((item) => item.id === itemId);
       if (idx === -1) continue;
-      slotData.items[idx] = { ...slotData.items[idx], isCooked, cookedAt };
+      const previousItem = slotData.items[idx];
+      slotData.items[idx] = { ...previousItem, isCooked, cookedAt };
       await this.setPlanSlot(userId, slot, slotData);
+      if (!previousItem.isCooked && isCooked && cookedAt) {
+        const cookLog: CookLogRecord = {
+          id: randomUUID(),
+          userId,
+          recipeId: previousItem.recipeId,
+          recipeTitle: previousItem.title,
+          recipeThumbnailUrl: previousItem.thumbnailUrl,
+          createdAt: cookedAt,
+        };
+        await this.put({
+          PK: pkUser(userId),
+          SK: skCookLog(cookedAt, cookLog.id),
+          entityType: "COOK_LOG",
+          ...cookLog,
+        });
+      }
       return { id: itemId, isCooked, cookedAt };
     }
     return null;

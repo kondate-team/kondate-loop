@@ -97,3 +97,16 @@
   3. AWSデプロイ（dev環境）
   4. AWSスモーク（API Gateway経由で 2xx とDynamoDB反映確認）
 - スモークが通るまで次ブランチへ進まない。
+
+## 7. Progress Log (2026-02-19)
+- Branch: `feature/018-api-category-archive`
+- Implemented endpoints:
+  - `GET /v1/categories`
+  - `POST /v1/categories`
+  - `PATCH /v1/categories/{id}`
+  - `DELETE /v1/categories/{id}`
+  - `GET /v1/archive`
+  - `GET /v1/archive/{date}`
+- Added datastore support for `Category` and cooking logs in both file and Dynamo implementations.
+- Added cooking log recording when `PATCH /v1/plan/items/{id}` sets `isCooked=true`.
+- Local verification: `npm run smoke:api --workspace=apps/api` passed.
