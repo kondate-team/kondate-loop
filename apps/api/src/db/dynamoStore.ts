@@ -22,11 +22,17 @@ import {
   skCookLog,
   skFridge,
   skFridgeDeleted,
+  skNotification,
+  skNotificationSettings,
   skPlan,
+  skPaymentMethod,
   skProfile,
+  skPurchase,
+  skPushToken,
   skRecipe,
   skSet,
   skShopping,
+  skSubscription,
 } from "./keys";
 import type {
   CategoryRecord,
@@ -37,12 +43,18 @@ import type {
   DataStore,
   DeletedFridgeItemRecord,
   FridgeItemRecord,
+  NotificationPlatform,
+  NotificationRecord,
+  NotificationSettingsRecord,
   PlanItemRecord,
   PlanRecord,
   PlanSlotRecord,
+  PaymentMethodRecord,
+  PurchaseRecord,
   RecipeRecord,
   SetRecord,
   ShoppingItemRecord,
+  SubscriptionRecord,
   UserRecord,
 } from "./types";
 
@@ -93,6 +105,18 @@ function stripMeta<T>(item: StoredItem<T>): T {
     ...value
   } = item;
   return value as T;
+}
+
+function defaultNotificationSettings(userId: string): NotificationSettingsRecord {
+  return {
+    userId,
+    pushEnabled: true,
+    categories: {
+      news: true,
+      personal: true,
+    },
+    updatedAt: nowIso(),
+  };
 }
 
 export class DynamoDataStore implements DataStore {
@@ -610,6 +634,204 @@ export class DynamoDataStore implements DataStore {
       .map(stripMeta)
       .filter((log) => log.createdAt.startsWith(date))
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  }
+
+  async upsertPaymentMethod(
+    userId: string,
+    method: Omit<PaymentMethodRecord, "userId" | "createdAt" | "updatedAt">
+  ): Promise<PaymentMethodRecord> {
+    const now = nowIso();
+    const existing = await this.get<PaymentMethodRecord>(pkUser(userId), skPaymentMethod(method.id));
+    const next: PaymentMethodRecord = {
+      userId,
+      id: method.id,
+      brand: method.brand,
+      last4: method.last4,
+      expMonth: method.expMonth,
+      expYear: method.expYear,
+      isDefault: method.isDefault,
+      createdAt: existing ? stripMeta(existing).createdAt : now,
+      updatedAt: now,
+    };
+    await this.put({
+      PK: pkUser(userId),
+      SK: skPaymentMethod(method.id),
+      entityType: "PAYMENT_METHOD",
+      ...next,
+    });
+    if (method.isDefault) {
+      const all = await this.listPaymentMethods(userId);
+      for (const item of all) {
+        if (item.id === method.id || !item.isDefault) continue;
+        await this.put({
+          PK: pkUser(userId),
+          SK: skPaymentMethod(item.id),
+          entityType: "PAYMENT_METHOD",
+          ...item,
+          isDefault: false,
+          updatedAt: nowIso(),
+        });
+      }
+    }
+    return next;
+  }
+
+  async listPaymentMethods(userId: string): Promise<PaymentMethodRecord[]> {
+    const items = await this.queryByPk<PaymentMethodRecord>(pkUser(userId), KEY_PREFIX.PAYMENT_METHOD);
+    return items
+      .map(stripMeta)
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  }
+
+  async deletePaymentMethod(userId: string, paymentMethodId: string): Promise<boolean> {
+    const existing = await this.get<PaymentMethodRecord>(pkUser(userId), skPaymentMethod(paymentMethodId));
+    if (!existing) return false;
+    await this.delete(pkUser(userId), skPaymentMethod(paymentMethodId));
+    return true;
+  }
+
+  async createPurchase(
+    userId: string,
+    input: Omit<PurchaseRecord, "userId" | "purchaseId" | "purchasedAt">
+  ): Promise<PurchaseRecord> {
+    const purchase: PurchaseRecord = {
+      purchaseId: randomUUID(),
+      userId,
+      itemType: input.itemType,
+      itemId: input.itemId,
+      itemTitle: input.itemTitle,
+      amount: input.amount,
+      currency: "JPY",
+      status: input.status,
+      purchasedAt: nowIso(),
+    };
+    await this.put({
+      PK: pkUser(userId),
+      SK: skPurchase(purchase.purchasedAt, purchase.purchaseId),
+      entityType: "PURCHASE",
+      ...purchase,
+    });
+    return purchase;
+  }
+
+  async listPurchases(userId: string): Promise<PurchaseRecord[]> {
+    const items = await this.queryByPk<PurchaseRecord>(pkUser(userId), KEY_PREFIX.PURCHASE);
+    return items
+      .map(stripMeta)
+      .sort((a, b) => (a.purchasedAt < b.purchasedAt ? 1 : -1));
+  }
+
+  async upsertSubscription(
+    userId: string,
+    input: Omit<SubscriptionRecord, "userId" | "updatedAt">
+  ): Promise<SubscriptionRecord> {
+    const subscription: SubscriptionRecord = {
+      subscriptionId: input.subscriptionId,
+      userId,
+      planId: input.planId,
+      status: input.status,
+      currentPeriodEnd: input.currentPeriodEnd,
+      updatedAt: nowIso(),
+    };
+    await this.put({
+      PK: pkUser(userId),
+      SK: skSubscription(),
+      entityType: "SUBSCRIPTION",
+      ...subscription,
+    });
+    return subscription;
+  }
+
+  async getSubscription(userId: string): Promise<SubscriptionRecord | null> {
+    const item = await this.get<SubscriptionRecord>(pkUser(userId), skSubscription());
+    return item ? stripMeta(item) : null;
+  }
+
+  async deleteSubscription(userId: string): Promise<boolean> {
+    const item = await this.get<SubscriptionRecord>(pkUser(userId), skSubscription());
+    if (!item) return false;
+    await this.delete(pkUser(userId), skSubscription());
+    return true;
+  }
+
+  async listNotifications(userId: string): Promise<NotificationRecord[]> {
+    const items = await this.queryByPk<NotificationRecord>(pkUser(userId), KEY_PREFIX.NOTIFICATION);
+    return items
+      .map(stripMeta)
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  }
+
+  async markNotificationsRead(
+    userId: string,
+    input: { notificationIds?: string[]; all?: boolean }
+  ): Promise<{ readCount: number; unreadCount: number }> {
+    const notifications = await this.queryByPk<NotificationRecord>(pkUser(userId), KEY_PREFIX.NOTIFICATION);
+    const target = new Set(input.notificationIds ?? []);
+    let readCount = 0;
+
+    for (const item of notifications) {
+      const body = stripMeta(item);
+      const shouldRead = input.all === true || target.has(body.id);
+      if (!shouldRead || body.isRead) continue;
+      readCount += 1;
+      await this.put({
+        PK: pkUser(userId),
+        SK: item.SK,
+        entityType: "NOTIFICATION",
+        ...body,
+        isRead: true,
+      });
+    }
+
+    const unreadCount = (await this.listNotifications(userId)).filter((item) => !item.isRead).length;
+    return { readCount, unreadCount };
+  }
+
+  async upsertPushToken(userId: string, token: string, platform: NotificationPlatform): Promise<boolean> {
+    const existing = await this.get<{ token: string }>(pkUser(userId), skPushToken(token));
+    if (existing) return false;
+    await this.put({
+      PK: pkUser(userId),
+      SK: skPushToken(token),
+      entityType: "PUSH_TOKEN",
+      userId,
+      token,
+      platform,
+      createdAt: nowIso(),
+    });
+    return true;
+  }
+
+  async deletePushToken(userId: string, token: string): Promise<boolean> {
+    const existing = await this.get<{ token: string }>(pkUser(userId), skPushToken(token));
+    if (!existing) return false;
+    await this.delete(pkUser(userId), skPushToken(token));
+    return true;
+  }
+
+  async getNotificationSettings(userId: string): Promise<NotificationSettingsRecord> {
+    const item = await this.get<NotificationSettingsRecord>(pkUser(userId), skNotificationSettings());
+    return item ? stripMeta(item) : defaultNotificationSettings(userId);
+  }
+
+  async updateNotificationSettings(
+    userId: string,
+    patch: { pushEnabled?: boolean; categories?: Partial<NotificationSettingsRecord["categories"]> }
+  ): Promise<NotificationSettingsRecord> {
+    const existing = await this.getNotificationSettings(userId);
+    const next: NotificationSettingsRecord = {
+      ...existing,
+      ...patch,
+      categories: patch.categories ? { ...existing.categories, ...patch.categories } : existing.categories,
+      updatedAt: nowIso(),
+    };
+    await this.put({
+      PK: pkUser(userId),
+      SK: skNotificationSettings(),
+      entityType: "NOTIFICATION_SETTINGS",
+      ...next,
+    });
+    return next;
   }
 
   async getPlan(userId: string): Promise<PlanRecord> {

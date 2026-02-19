@@ -150,6 +150,61 @@ async function runSmoke() {
   assert.strictEqual(getArchiveDate.status, 200, "get archive date failed");
   assert.ok(Array.isArray(getArchiveDate.json?.data?.logs), "archive date logs is invalid");
 
+  const listPaymentMethods = await request("GET", `/v1/payment-methods?userId=${userId}`);
+  assert.strictEqual(listPaymentMethods.status, 200, "list payment methods failed");
+  assert.ok(Array.isArray(listPaymentMethods.json?.data?.items), "payment methods list is invalid");
+
+  const createPurchase = await request("POST", "/v1/purchases", {
+    userId,
+    itemType: "recipe",
+    itemId: recipeId,
+    paymentMethodId: "pm_smoke_offline",
+  });
+  assert.strictEqual(createPurchase.status, 200, "create purchase failed");
+  assert.strictEqual(createPurchase.json?.data?.itemType, "recipe");
+
+  const listPurchases = await request("GET", `/v1/purchases?userId=${userId}`);
+  assert.strictEqual(listPurchases.status, 200, "list purchases failed");
+  assert.ok(Array.isArray(listPurchases.json?.data?.items), "purchases list is invalid");
+
+  const getSubscription = await request("GET", `/v1/subscriptions?userId=${userId}`);
+  assert.strictEqual(getSubscription.status, 200, "get subscription failed");
+
+  const getNotificationSettings = await request("GET", `/v1/notification-settings?userId=${userId}`);
+  assert.strictEqual(getNotificationSettings.status, 200, "get notification settings failed");
+  assert.strictEqual(typeof getNotificationSettings.json?.data?.pushEnabled, "boolean");
+
+  const patchNotificationSettings = await request("PATCH", "/v1/notification-settings", {
+    userId,
+    categories: { personal: false },
+  });
+  assert.strictEqual(patchNotificationSettings.status, 200, "patch notification settings failed");
+  assert.strictEqual(patchNotificationSettings.json?.data?.categories?.personal, false);
+
+  const listNotifications = await request("GET", `/v1/notifications?userId=${userId}&type=all&limit=20`);
+  assert.strictEqual(listNotifications.status, 200, "list notifications failed");
+  assert.ok(Array.isArray(listNotifications.json?.data?.items), "notifications list is invalid");
+
+  const readNotifications = await request("POST", "/v1/notifications/read", {
+    userId,
+    all: true,
+  });
+  assert.strictEqual(readNotifications.status, 200, "mark notifications read failed");
+  assert.strictEqual(typeof readNotifications.json?.data?.readCount, "number");
+
+  const pushToken = `smoke-push-${Date.now()}`;
+  const registerPushToken = await request("POST", "/v1/push-tokens", {
+    userId,
+    token: pushToken,
+    platform: "web",
+  });
+  assert.strictEqual(registerPushToken.status, 201, "register push token failed");
+
+  const deletePushToken = await request("DELETE", `/v1/push-tokens/${encodeURIComponent(pushToken)}`, {
+    userId,
+  });
+  assert.strictEqual(deletePushToken.status, 200, "delete push token failed");
+
   const deleteCategory = await request("DELETE", `/v1/categories/${categoryId}`, { userId });
   assert.strictEqual(deleteCategory.status, 200, "delete category failed");
 

@@ -4,7 +4,17 @@ import dotenv from "dotenv";
 import Stripe from "stripe";
 import { randomUUID } from "crypto";
 import { createDataStore } from "./db/storeFactory";
-import type { CategoryRecord, CategoryScope, PlanType, UserRecord, UserRole } from "./db/types";
+import type {
+  CategoryRecord,
+  CategoryScope,
+  NotificationType,
+  PlanType,
+  PurchaseItemType,
+  SubscriptionPlanId,
+  SubscriptionStatus,
+  UserRecord,
+  UserRole,
+} from "./db/types";
 
 dotenv.config();
 
@@ -29,6 +39,10 @@ export const app = express();
 const DEFAULT_CATEGORY_THEMES: Record<CategoryScope, string[]> = {
   book: ["muted", "amber"],
   catalog: ["muted", "sky"],
+};
+const PURCHASE_AMOUNT_BY_TYPE: Record<PurchaseItemType, number> = {
+  recipe: 680,
+  set: 1980,
 };
 
 function nowIso(): string {
@@ -119,6 +133,23 @@ function isValidMonth(month: string): boolean {
 
 function isValidDate(date: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(date);
+}
+
+function resolveNotificationType(value: unknown): NotificationType | "all" {
+  if (value === "news" || value === "personal" || value === "all") return value;
+  return "all";
+}
+
+function normalizeSubscriptionStatus(status: string | null | undefined): SubscriptionStatus {
+  if (status === "active") return "active";
+  if (status === "past_due") return "past_due";
+  if (status === "canceled") return "canceled";
+  if (status === "incomplete") return "incomplete";
+  return "incomplete";
+}
+
+function toSubscriptionPlanId(plan: PlanType | undefined): SubscriptionPlanId {
+  return plan === "creator_plus" ? "creator_plus" : "user_plus";
 }
 
 function buildDefaultCategories(userId: string, scope: CategoryScope): CategoryRecord[] {
@@ -309,6 +340,14 @@ app.post("/v1/payment-methods", async (req, res) => {
     });
 
     const pm = await stripe.paymentMethods.retrieve(paymentMethodId);
+    await store.upsertPaymentMethod(userId, {
+      id: paymentMethodId,
+      brand: pm.card?.brand ?? "unknown",
+      last4: pm.card?.last4 ?? "0000",
+      expMonth: pm.card?.exp_month ?? 0,
+      expYear: pm.card?.exp_year ?? 0,
+      isDefault: true,
+    });
     return res.json({
       ok: true,
       customerId,
@@ -325,6 +364,33 @@ app.post("/v1/payment-methods", async (req, res) => {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
     return res.status(400).json({ error: message });
+  }
+});
+
+app.get("/v1/payment-methods", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const items = await store.listPaymentMethods(userId);
+    return res.json({ data: { items } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.delete("/v1/payment-methods/:id", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const deleted = await store.deletePaymentMethod(userId, req.params.id);
+    if (!deleted) return res.status(404).json({ error: "Payment method not found" });
+    const user = await store.getUser(userId);
+    if (user?.stripeDefaultPaymentMethodId === req.params.id) {
+      await store.updateUser(userId, { stripeDefaultPaymentMethodId: undefined });
+    }
+    return res.json({ data: { id: req.params.id, deleted: true } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
   }
 });
 
@@ -379,6 +445,16 @@ app.post("/v1/subscriptions", async (req, res) => {
       plan: planType,
       subscriptionStatus: subscription.status ?? "unknown",
     });
+    const currentPeriodEnd =
+      typeof subscription.current_period_end === "number"
+        ? new Date(subscription.current_period_end * 1000).toISOString()
+        : nowIso();
+    await store.upsertSubscription(userId, {
+      subscriptionId: subscription.id,
+      planId: planType === "creator_plus" ? "creator_plus" : "user_plus",
+      status: normalizeSubscriptionStatus(subscription.status),
+      currentPeriodEnd,
+    });
 
     return res.json({
       ok: true,
@@ -389,6 +465,17 @@ app.post("/v1/subscriptions", async (req, res) => {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
     return res.status(400).json({ error: message });
+  }
+});
+
+app.get("/v1/subscriptions", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const subscription = await store.getSubscription(userId);
+    return res.json({ data: subscription });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
   }
 });
 
@@ -409,11 +496,70 @@ app.delete("/v1/subscriptions", async (req, res) => {
     await store.updateUser(userId, {
       subscriptionStatus: updated.status ?? "unknown",
     });
+    await store.upsertSubscription(userId, {
+      subscriptionId: user.stripeSubscriptionId,
+      planId: toSubscriptionPlanId(user.plan),
+      status: "canceling",
+      currentPeriodEnd: nowIso(),
+    });
 
     return res.json({ ok: true, subscription: updated });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
     return res.status(400).json({ error: message });
+  }
+});
+
+app.post("/v1/purchases", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const { itemType, itemId, paymentMethodId } = req.body ?? {};
+    if ((itemType !== "recipe" && itemType !== "set") || typeof itemId !== "string" || !itemId) {
+      return res.status(400).json({ error: "itemType(recipe|set) and itemId are required" });
+    }
+    const purchaseItemType: PurchaseItemType = itemType;
+    if (typeof paymentMethodId !== "string" || !paymentMethodId) {
+      return res.status(400).json({ error: "paymentMethodId is required" });
+    }
+
+    const methods = await store.listPaymentMethods(userId);
+    const hasMethod = methods.some((method) => method.id === paymentMethodId);
+    if (methods.length > 0 && !hasMethod) {
+      return res.status(404).json({ error: "Payment method not found" });
+    }
+
+    let itemTitle = itemId;
+    if (itemType === "recipe") {
+      const recipe = (await store.getCatalogRecipe(itemId)) ?? (await store.getRecipe(userId, itemId));
+      if (recipe) itemTitle = recipe.title;
+    } else {
+      const set = (await store.getCatalogSet(itemId)) ?? (await store.getSet(userId, itemId));
+      if (set) itemTitle = set.title;
+    }
+
+    const purchase = await store.createPurchase(userId, {
+      itemType: purchaseItemType,
+      itemId,
+      itemTitle,
+      amount: PURCHASE_AMOUNT_BY_TYPE[purchaseItemType],
+      currency: "JPY",
+      status: "succeeded",
+    });
+    return res.json({ data: purchase });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.get("/v1/purchases", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const items = await store.listPurchases(userId);
+    return res.json({ data: { items } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
   }
 });
 
@@ -453,6 +599,14 @@ app.post("/v1/purchases/plan", async (req, res) => {
 
     if (paymentIntent.status === "succeeded") {
       await store.updateUser(userId, { plan: "creator" });
+      await store.createPurchase(userId, {
+        itemType: "set",
+        itemId: "creator-plan",
+        itemTitle: "Creator Plan",
+        amount: 1200,
+        currency: "JPY",
+        status: "succeeded",
+      });
       return res.json({
         ok: true,
         status: "succeeded",
@@ -623,6 +777,16 @@ app.post("/v1/purchases/content", async (req, res) => {
     });
 
     if (paymentIntent.status === "succeeded") {
+      if (contentType === "recipe" || contentType === "set") {
+        await store.createPurchase(userId, {
+          itemType: contentType,
+          itemId: contentId,
+          itemTitle: contentId,
+          amount,
+          currency: "JPY",
+          status: "succeeded",
+        });
+      }
       return res.json({
         ok: true,
         status: "succeeded",
@@ -641,6 +805,156 @@ app.post("/v1/purchases/content", async (req, res) => {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
     return res.status(400).json({ error: message });
+  }
+});
+
+app.get("/v1/notifications", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const type = resolveNotificationType(req.query.type);
+    const limitRaw = Number(req.query.limit ?? 20);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 100) : 20;
+    const cursor = typeof req.query.cursor === "string" ? req.query.cursor : null;
+
+    const allItems = await store.listNotifications(userId);
+    const filtered = type === "all" ? allItems : allItems.filter((item) => item.type === type);
+    const startIndex = cursor ? Math.max(filtered.findIndex((item) => item.id === cursor) + 1, 0) : 0;
+    const pageItems = filtered.slice(startIndex, startIndex + limit);
+    const hasMore = startIndex + limit < filtered.length;
+    const nextCursor = hasMore ? pageItems[pageItems.length - 1]?.id ?? null : null;
+
+    return res.json({
+      data: {
+        items: pageItems,
+        unreadCount: allItems.filter((item) => !item.isRead).length,
+        nextCursor,
+        hasMore,
+      },
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.post("/v1/notifications/read", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const all = req.body?.all === true;
+    const notificationIds = Array.isArray(req.body?.notificationIds)
+      ? req.body.notificationIds.filter((id: unknown): id is string => typeof id === "string")
+      : undefined;
+    if (!all && (!notificationIds || notificationIds.length === 0)) {
+      return res.status(400).json({ error: "notificationIds(array) or all=true is required" });
+    }
+    const result = await store.markNotificationsRead(userId, { all, notificationIds });
+    return res.json({ data: result });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.post("/v1/push-tokens", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const { token, platform } = req.body ?? {};
+    if (typeof token !== "string" || !token.trim()) {
+      return res.status(400).json({ error: "token is required" });
+    }
+    if (platform !== "web") {
+      return res.status(400).json({ error: "platform must be web" });
+    }
+    const registered = await store.upsertPushToken(userId, token.trim(), platform);
+    return res.status(201).json({
+      data: {
+        token: token.trim(),
+        registered,
+      },
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.delete("/v1/push-tokens/:token", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const deleted = await store.deletePushToken(userId, req.params.token);
+    if (!deleted) return res.status(404).json({ error: "Push token not found" });
+    return res.json({
+      data: {
+        token: req.params.token,
+        deleted: true,
+      },
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.get("/v1/notification-settings", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const settings = await store.getNotificationSettings(userId);
+    return res.json({
+      data: {
+        pushEnabled: settings.pushEnabled,
+        categories: settings.categories,
+      },
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.patch("/v1/notification-settings", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const patch: {
+      pushEnabled?: boolean;
+      categories?: { news?: boolean; personal?: boolean };
+    } = {};
+    if (req.body?.pushEnabled !== undefined) {
+      if (typeof req.body.pushEnabled !== "boolean") {
+        return res.status(400).json({ error: "pushEnabled must be boolean" });
+      }
+      patch.pushEnabled = req.body.pushEnabled;
+    }
+    if (req.body?.categories !== undefined) {
+      const input = req.body.categories;
+      if (typeof input !== "object" || input === null) {
+        return res.status(400).json({ error: "categories must be an object" });
+      }
+      const categories: { news?: boolean; personal?: boolean } = {};
+      if (input.news !== undefined) {
+        if (typeof input.news !== "boolean") return res.status(400).json({ error: "categories.news must be boolean" });
+        categories.news = input.news;
+      }
+      if (input.personal !== undefined) {
+        if (typeof input.personal !== "boolean") {
+          return res.status(400).json({ error: "categories.personal must be boolean" });
+        }
+        categories.personal = input.personal;
+      }
+      patch.categories = categories;
+    }
+    if (patch.pushEnabled === undefined && patch.categories === undefined) {
+      return res.status(400).json({ error: "pushEnabled or categories is required" });
+    }
+    const settings = await store.updateNotificationSettings(userId, patch);
+    return res.json({
+      data: {
+        pushEnabled: settings.pushEnabled,
+        categories: settings.categories,
+      },
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
   }
 });
 
@@ -905,16 +1219,16 @@ app.post("/v1/catalog/recipes/:id/purchase", async (req, res) => {
     const userId = resolveUserId(req);
     const saved = await store.saveCatalogRecipe(userId, req.params.id);
     if (!saved) return res.status(404).json({ error: "Catalog recipe not found" });
+    const purchase = await store.createPurchase(userId, {
+      itemType: "recipe",
+      itemId: saved.id,
+      itemTitle: saved.title,
+      amount: 680,
+      currency: "JPY",
+      status: "succeeded",
+    });
     return res.json({
-      data: {
-        purchaseId: randomUUID(),
-        itemType: "recipe",
-        itemId: saved.id,
-        amount: 680,
-        currency: "JPY",
-        status: "succeeded",
-        purchasedAt: nowIso(),
-      },
+      data: purchase,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
@@ -927,16 +1241,16 @@ app.post("/v1/catalog/sets/:id/purchase", async (req, res) => {
     const userId = resolveUserId(req);
     const saved = await store.saveCatalogSet(userId, req.params.id);
     if (!saved) return res.status(404).json({ error: "Catalog set not found" });
+    const purchase = await store.createPurchase(userId, {
+      itemType: "set",
+      itemId: saved.id,
+      itemTitle: saved.title,
+      amount: 1980,
+      currency: "JPY",
+      status: "succeeded",
+    });
     return res.json({
-      data: {
-        purchaseId: randomUUID(),
-        itemType: "set",
-        itemId: saved.id,
-        amount: 1980,
-        currency: "JPY",
-        status: "succeeded",
-        purchasedAt: nowIso(),
-      },
+      data: purchase,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
