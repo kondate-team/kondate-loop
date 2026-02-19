@@ -149,6 +149,7 @@ export type DataStore = {
 
   getPlan(userId: string): Promise<PlanRecord>;
   setPlanSlot(userId: string, slot: "current" | "next", data: PlanSlotRecord): Promise<PlanSlotRecord>;
+  clearPlanSlot(userId: string, slot: "current" | "next"): Promise<void>;
   updatePlanItemCooked(
     userId: string,
     itemId: string,
@@ -165,6 +166,7 @@ export type DataStore = {
     itemId: string,
     patch: Partial<ShoppingItemRecord>
   ): Promise<ShoppingItemRecord | null>;
+  deleteShoppingItem(userId: string, itemId: string): Promise<boolean>;
   completeShopping(userId: string): Promise<{ movedToFridge: number; remaining: number }>;
 
   listFridgeItems(userId: string): Promise<FridgeItemRecord[]>;
