@@ -379,6 +379,10 @@ export class DynamoDataStore implements DataStore {
     return data;
   }
 
+  async clearPlanSlot(userId: string, slot: "current" | "next"): Promise<void> {
+    await this.delete(pkUser(userId), skPlan(slot === "current" ? "CURRENT" : "NEXT"));
+  }
+
   async updatePlanItemCooked(
     userId: string,
     itemId: string,
@@ -440,6 +444,13 @@ export class DynamoDataStore implements DataStore {
       ...next,
     });
     return next;
+  }
+
+  async deleteShoppingItem(userId: string, itemId: string): Promise<boolean> {
+    const existing = await this.get<ShoppingItemRecord>(pkUser(userId), skShopping(itemId));
+    if (!existing) return false;
+    await this.delete(pkUser(userId), skShopping(itemId));
+    return true;
   }
 
   async completeShopping(userId: string): Promise<{ movedToFridge: number; remaining: number }> {
