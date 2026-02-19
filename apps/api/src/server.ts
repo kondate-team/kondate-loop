@@ -64,6 +64,41 @@ function toMeResponse(user: UserRecord) {
   };
 }
 
+function truncate(text: string, max: number): string {
+  return text.length > max ? text.slice(0, max) : text;
+}
+
+function normalizeImportLines(content: string): string[] {
+  return content
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[-*・\d.)\s]+/, "").trim())
+    .filter(Boolean);
+}
+
+function parseImportDraft(type: "url" | "text", content: string) {
+  const sourceUrl = type === "url" ? content : null;
+  const lines = type === "text" ? normalizeImportLines(content) : [];
+  const fallbackTitle = sourceUrl ? `Imported from ${new URL(sourceUrl).hostname}` : "Imported recipe";
+  const title = truncate(lines[0] ?? fallbackTitle, 80);
+  const stepSource = lines.length > 1 ? lines.slice(1) : ["Please review and edit imported steps."];
+  const steps = stepSource.map((text) => ({ text: truncate(text, 200) }));
+
+  return {
+    draft: {
+      title,
+      servings: 2,
+      ingredients: [] as Array<{ name: string; quantity: string; unit: string }>,
+      steps,
+      sourceUrl,
+      authorName: null as string | null,
+      cookTimeMinutes: null as number | null,
+      tags: [] as string[],
+    },
+    source: type,
+    confidence: type === "text" && lines.length >= 3 ? "medium" : "low",
+  };
+}
+
 app.post(
   "/webhooks/stripe",
   express.raw({ type: "application/json" }),
@@ -571,6 +606,28 @@ app.post("/v1/purchases/content", async (req, res) => {
 });
 
 // recipes
+app.post("/v1/import/parse", async (req, res) => {
+  try {
+    const { type, content } = req.body ?? {};
+    if ((type !== "url" && type !== "text") || typeof content !== "string" || !content.trim()) {
+      return res.status(400).json({
+        error: "type(url|text) and content(string) are required",
+      });
+    }
+
+    const parsed = parseImportDraft(type, content.trim());
+    return res.json({ data: parsed });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(400).json({
+      error: {
+        code: "IMPORT_PARSE_FAILED",
+        message,
+      },
+    });
+  }
+});
+
 app.get("/v1/recipes", async (req, res) => {
   try {
     const userId = resolveUserId(req);
@@ -732,6 +789,28 @@ app.post("/v1/plan/select-set", async (req, res) => {
   }
 });
 
+app.post("/v1/plan/advance", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const plan = await store.getPlan(userId);
+    if (!plan.next) {
+      return res.status(409).json({ error: "Next plan is empty" });
+    }
+
+    await store.setPlanSlot(userId, "current", {
+      ...plan.next,
+      appliedAt: nowIso(),
+    });
+    await store.clearPlanSlot(userId, "next");
+
+    const updated = await store.getPlan(userId);
+    return res.json({ data: updated });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
 app.patch("/v1/plan/items/:id", async (req, res) => {
   try {
     const userId = resolveUserId(req);
@@ -781,6 +860,18 @@ app.patch("/v1/shopping-list/items/:id", async (req, res) => {
     const updated = await store.updateShoppingItem(userId, req.params.id, req.body ?? {});
     if (!updated) return res.status(404).json({ error: "Shopping item not found" });
     return res.json({ data: updated });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.delete("/v1/shopping-list/items/:id", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const deleted = await store.deleteShoppingItem(userId, req.params.id);
+    if (!deleted) return res.status(404).json({ error: "Shopping item not found" });
+    return res.json({ data: { id: req.params.id, deleted: true } });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
     return res.status(500).json({ error: message });
