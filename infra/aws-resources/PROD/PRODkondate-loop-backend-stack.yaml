@@ -308,7 +308,7 @@ Resources:
     Type: AWS::ApiGateway::Stage
     Properties:
       RestApiId: !Ref BackendApi
-      DeploymentId: !Ref BackendApiDeployment
+      DeploymentId: !Ref BackendApiDeploymentV2
       StageName: !Ref Env
       Description: !Sub 'deployment-${ApiDeploymentVersion}-${LambdaCodeS3Key}'
 
