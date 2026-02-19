@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 import Stripe from "stripe";
 import { randomUUID } from "crypto";
 import { createDataStore } from "./db/storeFactory";
-import type { PlanType } from "./db/types";
+import type { CategoryRecord, CategoryScope, PlanType } from "./db/types";
 
 dotenv.config();
 
@@ -26,6 +26,10 @@ const SHARE_BASE_URL = process.env.SHARE_BASE_URL ?? "https://kondate-loop.com";
 const stripe = new Stripe(STRIPE_SECRET_KEY);
 const store = createDataStore();
 export const app = express();
+const DEFAULT_CATEGORY_THEMES: Record<CategoryScope, string[]> = {
+  book: ["muted", "amber"],
+  catalog: ["muted", "sky"],
+};
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -75,6 +79,35 @@ function parseImportDraft(type: "url" | "text", content: string) {
     source: type,
     confidence: type === "text" && lines.length >= 3 ? "medium" : "low",
   };
+}
+
+function resolveCategoryScope(value: unknown): CategoryScope | null {
+  return value === "book" || value === "catalog" ? value : null;
+}
+
+function isValidMonth(month: string): boolean {
+  return /^\d{4}-\d{2}$/.test(month);
+}
+
+function isValidDate(date: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(date);
+}
+
+function buildDefaultCategories(userId: string, scope: CategoryScope): CategoryRecord[] {
+  const now = nowIso();
+  const labels = scope === "book" ? ["All", "Main"] : ["All", "Featured"];
+  return labels.map((tagName, index) => ({
+    id: `default-${scope}-${index}`,
+    userId,
+    scope,
+    tagName,
+    order: index,
+    isDefault: true,
+    isHidden: false,
+    colorTheme: DEFAULT_CATEGORY_THEMES[scope][index] ?? null,
+    createdAt: now,
+    updatedAt: now,
+  }));
 }
 
 app.post(
@@ -907,6 +940,161 @@ app.get("/v1/share/set/:id", async (req, res) => {
         thumbnailUrl: set.thumbnailUrl,
         recipeIds: set.recipeIds,
         tags: set.tags,
+      },
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+// categories
+app.get("/v1/categories", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const scope = resolveCategoryScope(req.query.scope);
+    if (!scope) {
+      return res.status(400).json({ error: "scope(book|catalog) is required" });
+    }
+    const defaults = buildDefaultCategories(userId, scope);
+    const customItems = await store.listCategories(userId, scope);
+    const items = [...defaults, ...customItems].sort((a, b) => a.order - b.order);
+    return res.json({ data: { items } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.post("/v1/categories", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const scope = resolveCategoryScope(req.body?.scope);
+    const rawTagName = typeof req.body?.tagName === "string" ? req.body.tagName.trim() : "";
+    if (!scope || !rawTagName) {
+      return res.status(400).json({ error: "scope(book|catalog) and tagName are required" });
+    }
+    if (rawTagName.length > 30) {
+      return res.status(400).json({ error: "tagName must be 30 characters or less" });
+    }
+    const category = await store.createCategory(userId, scope, rawTagName);
+    return res.status(201).json({ data: category });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.patch("/v1/categories/:id", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const categoryId = req.params.id;
+    if (categoryId.startsWith("default-")) {
+      return res.status(400).json({ error: "Default category cannot be updated" });
+    }
+
+    const patch: { tagName?: string; order?: number; isHidden?: boolean } = {};
+    if (req.body?.tagName !== undefined) {
+      if (typeof req.body.tagName !== "string" || !req.body.tagName.trim()) {
+        return res.status(400).json({ error: "tagName must be a non-empty string" });
+      }
+      if (req.body.tagName.trim().length > 30) {
+        return res.status(400).json({ error: "tagName must be 30 characters or less" });
+      }
+      patch.tagName = req.body.tagName.trim();
+    }
+    if (req.body?.order !== undefined) {
+      if (!Number.isInteger(req.body.order) || req.body.order < 0) {
+        return res.status(400).json({ error: "order must be a non-negative integer" });
+      }
+      patch.order = req.body.order;
+    }
+    if (req.body?.isHidden !== undefined) {
+      if (typeof req.body.isHidden !== "boolean") {
+        return res.status(400).json({ error: "isHidden must be boolean" });
+      }
+      patch.isHidden = req.body.isHidden;
+    }
+
+    if (Object.keys(patch).length === 0) {
+      return res.status(400).json({ error: "tagName, order, or isHidden is required" });
+    }
+
+    const updated = await store.updateCategory(userId, categoryId, patch);
+    if (!updated) return res.status(404).json({ error: "Category not found" });
+    return res.json({ data: updated });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.delete("/v1/categories/:id", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const categoryId = req.params.id;
+    if (categoryId.startsWith("default-")) {
+      return res.status(400).json({ error: "Default category cannot be deleted" });
+    }
+    const deleted = await store.deleteCategory(userId, categoryId);
+    if (!deleted) return res.status(404).json({ error: "Category not found" });
+    return res.json({ data: { id: categoryId, deleted: true } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+// archive
+app.get("/v1/archive", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const month = typeof req.query.month === "string" ? req.query.month : "";
+    if (!isValidMonth(month)) {
+      return res.status(400).json({ error: "month(YYYY-MM) is required" });
+    }
+
+    const logs = await store.listCookLogsByMonth(userId, month);
+    const dailyCount = new Map<string, number>();
+    for (const log of logs) {
+      const date = log.createdAt.slice(0, 10);
+      dailyCount.set(date, (dailyCount.get(date) ?? 0) + 1);
+    }
+    const days = Array.from(dailyCount.entries())
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .map(([date, count]) => ({ date, count, hasLogs: count > 0 }));
+
+    return res.json({
+      data: {
+        month,
+        days,
+        totalCount: logs.length,
+      },
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.get("/v1/archive/:date", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const date = req.params.date;
+    if (!isValidDate(date)) {
+      return res.status(400).json({ error: "date(YYYY-MM-DD) is required" });
+    }
+    const logs = await store.listCookLogsByDate(userId, date);
+    return res.json({
+      data: {
+        date,
+        logs: logs.map((log) => ({
+          id: log.id,
+          recipeId: log.recipeId,
+          recipeTitle: log.recipeTitle,
+          recipeThumbnailUrl: log.recipeThumbnailUrl,
+          createdAt: log.createdAt,
+        })),
       },
     });
   } catch (err: unknown) {

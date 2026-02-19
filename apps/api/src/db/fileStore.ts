@@ -2,6 +2,9 @@ import fs from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
 import type {
+  CategoryRecord,
+  CategoryScope,
+  CookLogRecord,
   CreateRecipeInput,
   CreateSetInput,
   DataStore,
@@ -20,6 +23,8 @@ type StoreData = {
   users: Record<string, UserRecord>;
   recipes: Record<string, RecipeRecord>;
   sets: Record<string, SetRecord>;
+  categories: Record<string, CategoryRecord>;
+  cookLogs: Record<string, CookLogRecord[]>;
   plans: Record<string, PlanRecord>;
   shopping: Record<string, ShoppingItemRecord[]>;
   fridge: Record<string, FridgeItemRecord[]>;
@@ -65,6 +70,8 @@ export class FileDataStore implements DataStore {
         users: parsed.users ?? {},
         recipes: parsed.recipes ?? {},
         sets: parsed.sets ?? {},
+        categories: parsed.categories ?? {},
+        cookLogs: parsed.cookLogs ?? {},
         plans: parsed.plans ?? {},
         shopping: parsed.shopping ?? {},
         fridge: parsed.fridge ?? {},
@@ -77,6 +84,8 @@ export class FileDataStore implements DataStore {
           users: {},
           recipes: {},
           sets: {},
+          categories: {},
+          cookLogs: {},
           plans: {},
           shopping: {},
           fridge: {},
@@ -398,6 +407,83 @@ export class FileDataStore implements DataStore {
     return true;
   }
 
+  async listCategories(userId: string, scope: CategoryScope): Promise<CategoryRecord[]> {
+    const store = await this.readStore();
+    return Object.values(store.categories)
+      .filter((category) => category.userId === userId && category.scope === scope)
+      .sort((a, b) => a.order - b.order);
+  }
+
+  async createCategory(userId: string, scope: CategoryScope, tagName: string): Promise<CategoryRecord> {
+    const store = await this.readStore();
+    const existing = Object.values(store.categories).filter(
+      (category) => category.userId === userId && category.scope === scope
+    );
+    const maxOrder = existing.length ? Math.max(...existing.map((category) => category.order)) : 1;
+    const now = nowIso();
+    const category: CategoryRecord = {
+      id: randomUUID(),
+      userId,
+      scope,
+      tagName,
+      order: maxOrder + 1,
+      isDefault: false,
+      isHidden: false,
+      colorTheme: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    store.categories[key(userId, category.id)] = category;
+    await this.writeStore(store);
+    return category;
+  }
+
+  async updateCategory(
+    userId: string,
+    categoryId: string,
+    patch: Partial<Pick<CategoryRecord, "tagName" | "order" | "isHidden">>
+  ): Promise<CategoryRecord | null> {
+    const store = await this.readStore();
+    const categoryKey = Object.entries(store.categories).find(
+      ([entryKey, value]) => entryKey.startsWith(`${userId}#`) && value.id === categoryId
+    )?.[0];
+    if (!categoryKey) return null;
+    const existing = store.categories[categoryKey];
+    const updated: CategoryRecord = {
+      ...existing,
+      ...patch,
+      updatedAt: nowIso(),
+    };
+    store.categories[categoryKey] = updated;
+    await this.writeStore(store);
+    return updated;
+  }
+
+  async deleteCategory(userId: string, categoryId: string): Promise<boolean> {
+    const store = await this.readStore();
+    const categoryKey = Object.entries(store.categories).find(
+      ([entryKey, value]) => entryKey.startsWith(`${userId}#`) && value.id === categoryId
+    )?.[0];
+    if (!categoryKey) return false;
+    delete store.categories[categoryKey];
+    await this.writeStore(store);
+    return true;
+  }
+
+  async listCookLogsByMonth(userId: string, month: string): Promise<CookLogRecord[]> {
+    const store = await this.readStore();
+    return (store.cookLogs[userId] ?? [])
+      .filter((log) => log.createdAt.startsWith(month))
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  }
+
+  async listCookLogsByDate(userId: string, date: string): Promise<CookLogRecord[]> {
+    const store = await this.readStore();
+    return (store.cookLogs[userId] ?? [])
+      .filter((log) => log.createdAt.startsWith(date))
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  }
+
   async getPlan(userId: string): Promise<PlanRecord> {
     const store = await this.readStore();
     return store.plans[userId] ?? { ...DEFAULT_PLAN };
@@ -440,11 +526,23 @@ export class FileDataStore implements DataStore {
       if (!slotData) continue;
       const idx = slotData.items.findIndex((item) => item.id === itemId);
       if (idx === -1) continue;
+      const previousItem = slotData.items[idx];
       slotData.items[idx] = {
-        ...slotData.items[idx],
+        ...previousItem,
         isCooked,
         cookedAt,
       };
+      if (!previousItem.isCooked && isCooked && cookedAt) {
+        const log: CookLogRecord = {
+          id: randomUUID(),
+          userId,
+          recipeId: previousItem.recipeId,
+          recipeTitle: previousItem.title,
+          recipeThumbnailUrl: previousItem.thumbnailUrl,
+          createdAt: cookedAt,
+        };
+        store.cookLogs[userId] = [...(store.cookLogs[userId] ?? []), log];
+      }
       store.plans[userId] = plan;
       await this.writeStore(store);
       return { id: itemId, isCooked, cookedAt };
