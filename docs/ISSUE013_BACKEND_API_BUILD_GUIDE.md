@@ -154,3 +154,57 @@ CI は以下の流れで検証している:
 - GSI の作成/削除で CloudFormation が失敗
   - DynamoDB は 1 回の更新で作れる/消せる GSI が制限されるため、`EnableGSI1/2/3` を段階的に切り替える
 
+
+## 6. ローカル動作確認で確認できたこと（2026-02-15）
+
+前提: `npm.cmd run dev:api` で `apps/api/src/server.ts`（Express）をローカル起動し、`Driver: file`（`DATA_STORE_DRIVER=file`）で検証。
+
+確認できたこと:
+- APIサーバーが起動してHTTPで到達できる（`GET /health` が `{"ok":true}`）
+- `POST /v1/recipes` が動き、JSONがパースされ、`201` で `data.id` が返る（作成処理まで動作）
+- `GET /v1/recipes?userId=...` が動き、指定 `userId` の一覧が返る
+- `GET /v1/recipes/:id?userId=...` が動き、作成した `id` が取得できる（保存と取得の整合が取れている）
+
+注意:
+- `GET /v1/recipes/:id` は `userId + id` の組み合わせで検索するため、`userId` が違うと `Recipe not found` になる。
+- file driver の保存先は `apps/api/data/store.json`。
+
+まだ確認できていないこと（次の段階）:
+- `DATA_STORE_DRIVER=dynamo`（DynamoDB）で同様にCRUDできるか
+- API Gateway 経由で同様に到達・CRUDできるか（AWSデプロイ後の確認）
+
+## 7. 追加確認結果（2026-02-19）
+
+### 7.1 API Gateway 経由の確認（実施済み）
+
+- 確認対象エンドポイント: `https://9xgpv0z4r7.execute-api.ap-northeast-1.amazonaws.com/dev/v1`
+- ローカル端末からの実行結果:
+  - `POST /recipes`: 成功
+  - `GET /recipes?userId=...`: 成功
+  - `PATCH /recipes/:id`: 成功
+  - `DELETE /recipes/:id`: 成功
+  - `GET /recipes/:id?userId=...`: `404 Recipe not found` を再現（同一 `userId/id` 指定でも発生）
+
+補足:
+- GitHub Actions 実行 `22032866866`（2026-02-15）でも `POST .../recipes -> 201` と DynamoDB 書き込み確認 (`PK/SK`) は成功している。
+
+### 7.2 `DATA_STORE_DRIVER=dynamo` のローカル確認（完了）
+
+- 実行:
+  - `DATA_STORE_DRIVER=dynamo`
+  - `TABLE_NAME=kondate-loop-dev-data-ddb-main`
+  - `npm.cmd run smoke:api --workspace=apps/api`
+- 結果:
+  - 1回目: `POST /v1/recipes` で `500`（`Could not load credentials from any providers`）
+  - 認証設定後の再実行: `POST /v1/recipes` で `500`（`dynamodb:PutItem` 権限不足）
+  - 具体的なエラー:
+    - `User: arn:aws:iam::211669976488:user/yuuka.nagatake is not authorized to perform: dynamodb:PutItem on resource: arn:aws:dynamodb:ap-northeast-1:211669976488:table/kondate-loop-dev-data-ddb-main`
+- 判定:
+  - DynamoDB ドライバ実装不備ではなく、ローカル実行ユーザーの IAM 権限不足が主要因。
+  - 最低でも対象テーブルへの `dynamodb:PutItem/GetItem/UpdateItem/DeleteItem/Query` が必要。
+  - `kondate-loop-iam-stack.yaml` の `DevAccessRole` 更新を反映しても、実行元 IAM ユーザーに `sts:AssumeRole`（to `DevAccessRole`）許可がないと権限は有効化されない。
+  - `AWS_PROFILE=devaccess`（role_arn + mfa_serial）を Node.js(AWS SDK v3) から直接使うと、MFAコード入力コールバックが無く `Profile devaccess requires multi-factor authentication` で失敗する。ローカル検証時は `aws sts assume-role --token-code ...` で一時クレデンシャルを発行し、`AWS_ACCESS_KEY_ID/SECRET_ACCESS_KEY/SESSION_TOKEN` を環境変数で渡す。
+
+- 最終確認（2026-02-19）:
+  - `aws configure export-credentials --profile devaccess --format env-no-export` で一時クレデンシャルを環境変数へ設定
+  - その状態で `npm.cmd run smoke:api --workspace=apps/api` を実行し、`Smoke API test passed.` を確認
