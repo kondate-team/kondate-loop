@@ -6,10 +6,10 @@ Parameters:
     Type: String
     Description: ARN of the IAM user/role that can assume this role (the external developer)
 
-  App:
+  SystemId:
     Type: String
     Default: kondate-loop
-    Description: e.g. kondate-loop
+    Description: System identifier
   Env:
     Type: String
     Description: e.g. dev
@@ -67,7 +67,7 @@ Resources:
                   - lambda:InvokeFunction
                   - lambda:ListVersionsByFunction
                 Resource:
-                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${App}-${Env}-api-fn-*'
+                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${SystemId}-${Env}-api-fn-*'
                 Condition:
                   StringEquals:
                     aws:RequestedRegion: !Ref AllowedRegion
@@ -89,7 +89,25 @@ Resources:
                   - logs:GetLogEvents
                   - logs:FilterLogEvents
                 Resource:
-                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${App}-${Env}-api-fn-*:*'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${SystemId}-${Env}-api-fn-*:*'
+                Condition:
+                  StringEquals:
+                    aws:RequestedRegion: !Ref AllowedRegion
+
+              # ---- DynamoDB (dev main table) ----
+              - Sid: DynamoDbCrudScoped
+                Effect: Allow
+                Action:
+                  - dynamodb:DescribeTable
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${SystemId}-${Env}-data-ddb-main'
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${SystemId}-${Env}-data-ddb-main/index/*'
                 Condition:
                   StringEquals:
                     aws:RequestedRegion: !Ref AllowedRegion
