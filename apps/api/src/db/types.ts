@@ -57,6 +57,12 @@ export type SetRecord = {
 };
 
 export type CategoryScope = "book" | "catalog";
+export type PurchaseItemType = "recipe" | "set";
+export type PurchaseStatus = "succeeded" | "failed" | "pending";
+export type SubscriptionPlanId = "user_plus" | "creator_plus";
+export type SubscriptionStatus = "active" | "canceling" | "canceled" | "past_due" | "incomplete";
+export type NotificationType = "news" | "personal";
+export type NotificationPlatform = "web";
 
 export type CategoryRecord = {
   id: string;
@@ -99,6 +105,68 @@ export type CookLogRecord = {
   recipeTitle: string;
   recipeThumbnailUrl: string | null;
   createdAt: string;
+};
+
+export type PaymentMethodRecord = {
+  id: string;
+  userId: string;
+  brand: string;
+  last4: string;
+  expMonth: number;
+  expYear: number;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PurchaseRecord = {
+  purchaseId: string;
+  userId: string;
+  itemType: PurchaseItemType;
+  itemId: string;
+  itemTitle: string;
+  amount: number;
+  currency: "JPY";
+  status: PurchaseStatus;
+  purchasedAt: string;
+};
+
+export type SubscriptionRecord = {
+  subscriptionId: string;
+  userId: string;
+  planId: SubscriptionPlanId;
+  status: SubscriptionStatus;
+  currentPeriodEnd: string;
+  updatedAt: string;
+};
+
+export type NotificationRecord = {
+  id: string;
+  userId: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  imageUrl: string | null;
+  linkUrl: string | null;
+  isRead: boolean;
+  createdAt: string;
+};
+
+export type PushTokenRecord = {
+  userId: string;
+  token: string;
+  platform: NotificationPlatform;
+  createdAt: string;
+};
+
+export type NotificationSettingsRecord = {
+  userId: string;
+  pushEnabled: boolean;
+  categories: {
+    news: boolean;
+    personal: boolean;
+  };
+  updatedAt: string;
 };
 
 export type ShoppingItemRecord = {
@@ -186,6 +254,38 @@ export type DataStore = {
   deleteCategory(userId: string, categoryId: string): Promise<boolean>;
   listCookLogsByMonth(userId: string, month: string): Promise<CookLogRecord[]>;
   listCookLogsByDate(userId: string, date: string): Promise<CookLogRecord[]>;
+  upsertPaymentMethod(
+    userId: string,
+    method: Omit<PaymentMethodRecord, "userId" | "createdAt" | "updatedAt">
+  ): Promise<PaymentMethodRecord>;
+  listPaymentMethods(userId: string): Promise<PaymentMethodRecord[]>;
+  deletePaymentMethod(userId: string, paymentMethodId: string): Promise<boolean>;
+  createPurchase(
+    userId: string,
+    input: Omit<PurchaseRecord, "userId" | "purchaseId" | "purchasedAt">
+  ): Promise<PurchaseRecord>;
+  listPurchases(userId: string): Promise<PurchaseRecord[]>;
+  upsertSubscription(
+    userId: string,
+    input: Omit<SubscriptionRecord, "userId" | "updatedAt">
+  ): Promise<SubscriptionRecord>;
+  getSubscription(userId: string): Promise<SubscriptionRecord | null>;
+  deleteSubscription(userId: string): Promise<boolean>;
+  listNotifications(userId: string): Promise<NotificationRecord[]>;
+  markNotificationsRead(
+    userId: string,
+    input: { notificationIds?: string[]; all?: boolean }
+  ): Promise<{ readCount: number; unreadCount: number }>;
+  upsertPushToken(userId: string, token: string, platform: NotificationPlatform): Promise<boolean>;
+  deletePushToken(userId: string, token: string): Promise<boolean>;
+  getNotificationSettings(userId: string): Promise<NotificationSettingsRecord>;
+  updateNotificationSettings(
+    userId: string,
+    patch: {
+      pushEnabled?: boolean;
+      categories?: Partial<NotificationSettingsRecord["categories"]>;
+    }
+  ): Promise<NotificationSettingsRecord>;
 
   getPlan(userId: string): Promise<PlanRecord>;
   setPlanSlot(userId: string, slot: "current" | "next", data: PlanSlotRecord): Promise<PlanSlotRecord>;

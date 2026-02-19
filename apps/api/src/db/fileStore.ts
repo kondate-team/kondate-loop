@@ -10,12 +10,18 @@ import type {
   DataStore,
   DeletedFridgeItemRecord,
   FridgeItemRecord,
+  NotificationPlatform,
+  NotificationRecord,
+  NotificationSettingsRecord,
   PlanItemRecord,
   PlanRecord,
   PlanSlotRecord,
+  PaymentMethodRecord,
+  PurchaseRecord,
   RecipeRecord,
   SetRecord,
   ShoppingItemRecord,
+  SubscriptionRecord,
   UserRecord,
 } from "./types";
 
@@ -25,6 +31,12 @@ type StoreData = {
   sets: Record<string, SetRecord>;
   categories: Record<string, CategoryRecord>;
   cookLogs: Record<string, CookLogRecord[]>;
+  paymentMethods: Record<string, PaymentMethodRecord[]>;
+  purchases: Record<string, PurchaseRecord[]>;
+  subscriptions: Record<string, SubscriptionRecord>;
+  notifications: Record<string, NotificationRecord[]>;
+  pushTokens: Record<string, Array<{ token: string; platform: NotificationPlatform; createdAt: string }>>;
+  notificationSettings: Record<string, NotificationSettingsRecord>;
   plans: Record<string, PlanRecord>;
   shopping: Record<string, ShoppingItemRecord[]>;
   fridge: Record<string, FridgeItemRecord[]>;
@@ -55,6 +67,18 @@ function buildPlanItemsFromRecipeIds(recipes: RecipeRecord[], recipeIds: string[
   });
 }
 
+function defaultNotificationSettings(userId: string): NotificationSettingsRecord {
+  return {
+    userId,
+    pushEnabled: true,
+    categories: {
+      news: true,
+      personal: true,
+    },
+    updatedAt: nowIso(),
+  };
+}
+
 export class FileDataStore implements DataStore {
   private readonly storePath: string;
 
@@ -72,6 +96,12 @@ export class FileDataStore implements DataStore {
         sets: parsed.sets ?? {},
         categories: parsed.categories ?? {},
         cookLogs: parsed.cookLogs ?? {},
+        paymentMethods: parsed.paymentMethods ?? {},
+        purchases: parsed.purchases ?? {},
+        subscriptions: parsed.subscriptions ?? {},
+        notifications: parsed.notifications ?? {},
+        pushTokens: parsed.pushTokens ?? {},
+        notificationSettings: parsed.notificationSettings ?? {},
         plans: parsed.plans ?? {},
         shopping: parsed.shopping ?? {},
         fridge: parsed.fridge ?? {},
@@ -86,6 +116,12 @@ export class FileDataStore implements DataStore {
           sets: {},
           categories: {},
           cookLogs: {},
+          paymentMethods: {},
+          purchases: {},
+          subscriptions: {},
+          notifications: {},
+          pushTokens: {},
+          notificationSettings: {},
           plans: {},
           shopping: {},
           fridge: {},
@@ -488,6 +524,180 @@ export class FileDataStore implements DataStore {
     return (store.cookLogs[userId] ?? [])
       .filter((log) => log.createdAt.startsWith(date))
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  }
+
+  async upsertPaymentMethod(
+    userId: string,
+    method: Omit<PaymentMethodRecord, "userId" | "createdAt" | "updatedAt">
+  ): Promise<PaymentMethodRecord> {
+    const store = await this.readStore();
+    const current = store.paymentMethods[userId] ?? [];
+    const now = nowIso();
+    const next: PaymentMethodRecord = {
+      userId,
+      id: method.id,
+      brand: method.brand,
+      last4: method.last4,
+      expMonth: method.expMonth,
+      expYear: method.expYear,
+      isDefault: method.isDefault,
+      createdAt: current.find((item) => item.id === method.id)?.createdAt ?? now,
+      updatedAt: now,
+    };
+    let merged = current.filter((item) => item.id !== method.id);
+    merged.push(next);
+    if (next.isDefault) {
+      merged = merged.map((item) => ({ ...item, isDefault: item.id === next.id }));
+    }
+    store.paymentMethods[userId] = merged.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    await this.writeStore(store);
+    return next;
+  }
+
+  async listPaymentMethods(userId: string): Promise<PaymentMethodRecord[]> {
+    const store = await this.readStore();
+    return store.paymentMethods[userId] ?? [];
+  }
+
+  async deletePaymentMethod(userId: string, paymentMethodId: string): Promise<boolean> {
+    const store = await this.readStore();
+    const current = store.paymentMethods[userId] ?? [];
+    const next = current.filter((item) => item.id !== paymentMethodId);
+    if (next.length === current.length) return false;
+    if (!next.some((item) => item.isDefault) && next.length > 0) {
+      next[0].isDefault = true;
+    }
+    store.paymentMethods[userId] = next;
+    await this.writeStore(store);
+    return true;
+  }
+
+  async createPurchase(
+    userId: string,
+    input: Omit<PurchaseRecord, "userId" | "purchaseId" | "purchasedAt">
+  ): Promise<PurchaseRecord> {
+    const store = await this.readStore();
+    const purchase: PurchaseRecord = {
+      purchaseId: randomUUID(),
+      userId,
+      itemType: input.itemType,
+      itemId: input.itemId,
+      itemTitle: input.itemTitle,
+      amount: input.amount,
+      currency: "JPY",
+      status: input.status,
+      purchasedAt: nowIso(),
+    };
+    store.purchases[userId] = [purchase, ...(store.purchases[userId] ?? [])];
+    await this.writeStore(store);
+    return purchase;
+  }
+
+  async listPurchases(userId: string): Promise<PurchaseRecord[]> {
+    const store = await this.readStore();
+    return store.purchases[userId] ?? [];
+  }
+
+  async upsertSubscription(
+    userId: string,
+    input: Omit<SubscriptionRecord, "userId" | "updatedAt">
+  ): Promise<SubscriptionRecord> {
+    const store = await this.readStore();
+    const subscription: SubscriptionRecord = {
+      subscriptionId: input.subscriptionId,
+      userId,
+      planId: input.planId,
+      status: input.status,
+      currentPeriodEnd: input.currentPeriodEnd,
+      updatedAt: nowIso(),
+    };
+    store.subscriptions[userId] = subscription;
+    await this.writeStore(store);
+    return subscription;
+  }
+
+  async getSubscription(userId: string): Promise<SubscriptionRecord | null> {
+    const store = await this.readStore();
+    return store.subscriptions[userId] ?? null;
+  }
+
+  async deleteSubscription(userId: string): Promise<boolean> {
+    const store = await this.readStore();
+    if (!store.subscriptions[userId]) return false;
+    delete store.subscriptions[userId];
+    await this.writeStore(store);
+    return true;
+  }
+
+  async listNotifications(userId: string): Promise<NotificationRecord[]> {
+    const store = await this.readStore();
+    return store.notifications[userId] ?? [];
+  }
+
+  async markNotificationsRead(
+    userId: string,
+    input: { notificationIds?: string[]; all?: boolean }
+  ): Promise<{ readCount: number; unreadCount: number }> {
+    const store = await this.readStore();
+    const list = store.notifications[userId] ?? [];
+    let readCount = 0;
+    const targetIds = new Set(input.notificationIds ?? []);
+
+    for (const item of list) {
+      const shouldRead = input.all === true || targetIds.has(item.id);
+      if (shouldRead && !item.isRead) {
+        item.isRead = true;
+        readCount += 1;
+      }
+    }
+    store.notifications[userId] = list;
+    await this.writeStore(store);
+    const unreadCount = list.filter((item) => !item.isRead).length;
+    return { readCount, unreadCount };
+  }
+
+  async upsertPushToken(userId: string, token: string, platform: NotificationPlatform): Promise<boolean> {
+    const store = await this.readStore();
+    const current = store.pushTokens[userId] ?? [];
+    const exists = current.some((item) => item.token === token);
+    if (!exists) {
+      current.push({ token, platform, createdAt: nowIso() });
+      store.pushTokens[userId] = current;
+      await this.writeStore(store);
+    }
+    return !exists;
+  }
+
+  async deletePushToken(userId: string, token: string): Promise<boolean> {
+    const store = await this.readStore();
+    const current = store.pushTokens[userId] ?? [];
+    const next = current.filter((item) => item.token !== token);
+    if (next.length === current.length) return false;
+    store.pushTokens[userId] = next;
+    await this.writeStore(store);
+    return true;
+  }
+
+  async getNotificationSettings(userId: string): Promise<NotificationSettingsRecord> {
+    const store = await this.readStore();
+    return store.notificationSettings[userId] ?? defaultNotificationSettings(userId);
+  }
+
+  async updateNotificationSettings(
+    userId: string,
+    patch: { pushEnabled?: boolean; categories?: Partial<NotificationSettingsRecord["categories"]> }
+  ): Promise<NotificationSettingsRecord> {
+    const store = await this.readStore();
+    const existing = store.notificationSettings[userId] ?? defaultNotificationSettings(userId);
+    const next: NotificationSettingsRecord = {
+      ...existing,
+      ...patch,
+      categories: patch.categories ? { ...existing.categories, ...patch.categories } : existing.categories,
+      updatedAt: nowIso(),
+    };
+    store.notificationSettings[userId] = next;
+    await this.writeStore(store);
+    return next;
   }
 
   async getPlan(userId: string): Promise<PlanRecord> {

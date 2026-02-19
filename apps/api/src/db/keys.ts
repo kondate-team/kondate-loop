@@ -69,6 +69,30 @@ export function skCookLog(createdAt: string, cookLogId: string): string {
   return `${KEY_PREFIX.COOKLOG}${createdAt}#${cookLogId}`;
 }
 
+export function skPaymentMethod(paymentMethodId: string): string {
+  return `${KEY_PREFIX.PAYMENT_METHOD}${paymentMethodId}`;
+}
+
+export function skPurchase(purchasedAt: string, purchaseId: string): string {
+  return `${KEY_PREFIX.PURCHASE}${purchasedAt}#${purchaseId}`;
+}
+
+export function skSubscription(): string {
+  return KEY_PREFIX.SUBSCRIPTION;
+}
+
+export function skNotification(createdAt: string, notificationId: string): string {
+  return `${KEY_PREFIX.NOTIFICATION}${createdAt}#${notificationId}`;
+}
+
+export function skPushToken(token: string): string {
+  return `${KEY_PREFIX.PUSH_TOKEN}${token}`;
+}
+
+export function skNotificationSettings(): string {
+  return KEY_PREFIX.NOTIFICATION_SETTINGS;
+}
+
 export function gsi1Pk(entityType: string, id: string): string {
   return `ENTITY#${entityType}#${id}`;
 }

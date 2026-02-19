@@ -110,3 +110,19 @@
 - Added datastore support for `Category` and cooking logs in both file and Dynamo implementations.
 - Added cooking log recording when `PATCH /v1/plan/items/{id}` sets `isCooked=true`.
 - Local verification: `npm run smoke:api --workspace=apps/api` passed.
+- Branch: `feature/019-api-payment-read-notification`
+- Implemented endpoints:
+  - `GET /v1/payment-methods`
+  - `DELETE /v1/payment-methods/{id}`
+  - `POST /v1/purchases`
+  - `GET /v1/purchases`
+  - `GET /v1/subscriptions`
+  - `GET /v1/notifications`
+  - `POST /v1/notifications/read`
+  - `POST /v1/push-tokens`
+  - `DELETE /v1/push-tokens/{token}`
+  - `GET /v1/notification-settings`
+  - `PATCH /v1/notification-settings`
+- Added datastore support (file + dynamo): payment methods, purchases, subscriptions, notifications, push tokens, notification settings.
+- Wired existing endpoints to persist payment/subscription/purchase data where applicable.
+- Local verification: `npm run build --workspace=apps/api` and `npm run smoke:api --workspace=apps/api` passed.
