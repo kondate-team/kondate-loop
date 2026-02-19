@@ -126,3 +126,9 @@ BE担当者がFE側の状況を把握するための参考資料です。
 - `ISSUE013_BACKEND_API_BUILD_GUIDE.md`
   - Issue #013: AWS backend API build steps (API Gateway + Lambda + DynamoDB)
   - CI deploy notes (GitHub Actions + OIDC) and verification checklist
+
+## Additional docs (2026-02-19)
+
+- `ISSUE014_API_FEATURE_LOOP_PLAN_2026-02-19.md`
+  - API feature loop backlog based on current implementation gap
+  - Priority order and branch plan for incremental API delivery

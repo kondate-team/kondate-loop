@@ -1,7 +1,8 @@
-import express from "express";
+﻿import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import Stripe from "stripe";
+import { randomUUID } from "crypto";
 import { createDataStore } from "./db/storeFactory";
 import type { PlanType } from "./db/types";
 
@@ -20,6 +21,7 @@ const STRIPE_PRICE_ID_USER_PLUS = process.env.STRIPE_PRICE_ID_USER_PLUS ?? "";
 const STRIPE_PRICE_ID_CREATOR_PLUS = process.env.STRIPE_PRICE_ID_CREATOR_PLUS ?? "";
 const STRIPE_PRICE_ID_CREATOR = process.env.STRIPE_PRICE_ID_CREATOR ?? "";
 const PLATFORM_FEE_PERCENT = Number(process.env.PLATFORM_FEE_PERCENT ?? 10);
+const SHARE_BASE_URL = process.env.SHARE_BASE_URL ?? "https://kondate-loop.com";
 
 const stripe = new Stripe(STRIPE_SECRET_KEY);
 const store = createDataStore();
@@ -34,6 +36,45 @@ function resolveUserId(req: express.Request): string {
   const queryUserId = typeof req.query?.userId === "string" ? req.query.userId : "";
   const headerUserId = typeof req.headers["x-user-id"] === "string" ? req.headers["x-user-id"] : "";
   return bodyUserId || queryUserId || headerUserId || "demo-user";
+}
+
+function buildShareUrl(targetType: "recipe" | "set", targetId: string): string {
+  return `${SHARE_BASE_URL}/share/${targetType}/${targetId}`;
+}
+
+function truncate(text: string, max: number): string {
+  return text.length > max ? text.slice(0, max) : text;
+}
+
+function normalizeImportLines(content: string): string[] {
+  return content
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[-*・\d.)\s]+/, "").trim())
+    .filter(Boolean);
+}
+
+function parseImportDraft(type: "url" | "text", content: string) {
+  const sourceUrl = type === "url" ? content : null;
+  const lines = type === "text" ? normalizeImportLines(content) : [];
+  const fallbackTitle = sourceUrl ? `Imported from ${new URL(sourceUrl).hostname}` : "Imported recipe";
+  const title = truncate(lines[0] ?? fallbackTitle, 80);
+  const stepSource = lines.length > 1 ? lines.slice(1) : ["Please review and edit imported steps."];
+  const steps = stepSource.map((text) => ({ text: truncate(text, 200) }));
+
+  return {
+    draft: {
+      title,
+      servings: 2,
+      ingredients: [] as Array<{ name: string; quantity: string; unit: string }>,
+      steps,
+      sourceUrl,
+      authorName: null as string | null,
+      cookTimeMinutes: null as number | null,
+      tags: [] as string[],
+    },
+    source: type,
+    confidence: type === "text" && lines.length >= 3 ? "medium" : "low",
+  };
 }
 
 app.post(
@@ -491,6 +532,28 @@ app.post("/v1/purchases/content", async (req, res) => {
 });
 
 // recipes
+app.post("/v1/import/parse", async (req, res) => {
+  try {
+    const { type, content } = req.body ?? {};
+    if ((type !== "url" && type !== "text") || typeof content !== "string" || !content.trim()) {
+      return res.status(400).json({
+        error: "type(url|text) and content(string) are required",
+      });
+    }
+
+    const parsed = parseImportDraft(type, content.trim());
+    return res.json({ data: parsed });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(400).json({
+      error: {
+        code: "IMPORT_PARSE_FAILED",
+        message,
+      },
+    });
+  }
+});
+
 app.get("/v1/recipes", async (req, res) => {
   try {
     const userId = resolveUserId(req);
@@ -616,6 +679,242 @@ app.delete("/v1/sets/:id", async (req, res) => {
   }
 });
 
+// catalog
+app.get("/v1/catalog/recipes", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const [items, ownRecipes] = await Promise.all([
+      store.listCatalogRecipes(),
+      store.listRecipes(userId),
+    ]);
+    const savedIds = new Set(ownRecipes.filter((recipe) => recipe.origin === "saved").map((recipe) => recipe.id));
+    const annotated = items.map((item) => ({ ...item, isSaved: savedIds.has(item.id) }));
+    return res.json({ data: { items: annotated } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.get("/v1/catalog/sets", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const [items, ownSets] = await Promise.all([store.listCatalogSets(), store.listSets(userId)]);
+    const savedIds = new Set(ownSets.filter((set) => set.origin === "saved").map((set) => set.id));
+    const annotated = items.map((item) => ({ ...item, isSaved: savedIds.has(item.id) }));
+    return res.json({ data: { items: annotated } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.get("/v1/catalog/recipes/:id", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const [item, own] = await Promise.all([
+      store.getCatalogRecipe(req.params.id),
+      store.getRecipe(userId, req.params.id),
+    ]);
+    if (!item) return res.status(404).json({ error: "Catalog recipe not found" });
+    return res.json({ data: { ...item, isSaved: own?.origin === "saved" } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.get("/v1/catalog/sets/:id", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const [item, own] = await Promise.all([
+      store.getCatalogSet(req.params.id),
+      store.getSet(userId, req.params.id),
+    ]);
+    if (!item) return res.status(404).json({ error: "Catalog set not found" });
+    return res.json({ data: { ...item, isSaved: own?.origin === "saved" } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.post("/v1/catalog/recipes/:id/save", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const saved = await store.saveCatalogRecipe(userId, req.params.id);
+    if (!saved) return res.status(404).json({ error: "Catalog recipe not found" });
+    return res.json({ data: { recipeId: saved.id, saved: true } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.delete("/v1/catalog/recipes/:id/save", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const unsaved = await store.unsaveCatalogRecipe(userId, req.params.id);
+    if (!unsaved) return res.status(404).json({ error: "Saved catalog recipe not found" });
+    return res.json({ data: { recipeId: req.params.id, saved: false } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.post("/v1/catalog/sets/:id/save", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const saved = await store.saveCatalogSet(userId, req.params.id);
+    if (!saved) return res.status(404).json({ error: "Catalog set not found" });
+    return res.json({ data: { setId: saved.id, saved: true } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.delete("/v1/catalog/sets/:id/save", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const unsaved = await store.unsaveCatalogSet(userId, req.params.id);
+    if (!unsaved) return res.status(404).json({ error: "Saved catalog set not found" });
+    return res.json({ data: { setId: req.params.id, saved: false } });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.post("/v1/catalog/recipes/:id/purchase", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const saved = await store.saveCatalogRecipe(userId, req.params.id);
+    if (!saved) return res.status(404).json({ error: "Catalog recipe not found" });
+    return res.json({
+      data: {
+        purchaseId: randomUUID(),
+        itemType: "recipe",
+        itemId: saved.id,
+        amount: 680,
+        currency: "JPY",
+        status: "succeeded",
+        purchasedAt: nowIso(),
+      },
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.post("/v1/catalog/sets/:id/purchase", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const saved = await store.saveCatalogSet(userId, req.params.id);
+    if (!saved) return res.status(404).json({ error: "Catalog set not found" });
+    return res.json({
+      data: {
+        purchaseId: randomUUID(),
+        itemType: "set",
+        itemId: saved.id,
+        amount: 1980,
+        currency: "JPY",
+        status: "succeeded",
+        purchasedAt: nowIso(),
+      },
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+// share
+app.post("/v1/share", async (req, res) => {
+  try {
+    const { targetType, targetId, authorName, sourceUrl } = req.body ?? {};
+    if ((targetType !== "recipe" && targetType !== "set") || typeof targetId !== "string") {
+      return res.status(400).json({ error: "targetType(recipe|set) and targetId are required" });
+    }
+
+    if (targetType === "recipe") {
+      const recipe = await store.getCatalogRecipe(targetId);
+      if (!recipe) return res.status(404).json({ error: "Catalog recipe not found" });
+      return res.json({
+        data: {
+          shareUrl: buildShareUrl("recipe", recipe.id),
+          targetType: "recipe",
+          targetId: recipe.id,
+          authorName: authorName ?? recipe.authorName ?? null,
+          sourceUrl: sourceUrl ?? recipe.sourceUrl ?? null,
+        },
+      });
+    }
+
+    const set = await store.getCatalogSet(targetId);
+    if (!set) return res.status(404).json({ error: "Catalog set not found" });
+    return res.json({
+      data: {
+        shareUrl: buildShareUrl("set", set.id),
+        targetType: "set",
+        targetId: set.id,
+        authorName: authorName ?? set.authorName ?? null,
+        sourceUrl: sourceUrl ?? null,
+      },
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.get("/v1/share/recipe/:id", async (req, res) => {
+  try {
+    const recipe = await store.getCatalogRecipe(req.params.id);
+    if (!recipe) return res.status(404).json({ error: "Shared recipe not found" });
+    return res.json({
+      data: {
+        id: recipe.id,
+        title: recipe.title,
+        authorName: recipe.authorName,
+        sourceUrl: recipe.sourceUrl,
+        thumbnailUrl: recipe.thumbnailUrl,
+        servings: recipe.servings,
+        cookTimeMinutes: recipe.cookTimeMinutes,
+        ingredients: recipe.ingredients,
+        steps: recipe.steps,
+        tags: recipe.tags,
+      },
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.get("/v1/share/set/:id", async (req, res) => {
+  try {
+    const set = await store.getCatalogSet(req.params.id);
+    if (!set) return res.status(404).json({ error: "Shared set not found" });
+    return res.json({
+      data: {
+        id: set.id,
+        title: set.title,
+        authorName: set.authorName,
+        description: set.description,
+        thumbnailUrl: set.thumbnailUrl,
+        recipeIds: set.recipeIds,
+        tags: set.tags,
+      },
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
 // plan
 app.get("/v1/plan", async (req, res) => {
   try {
@@ -646,6 +945,28 @@ app.post("/v1/plan/select-set", async (req, res) => {
     };
     await store.setPlanSlot(userId, slot, planSlot);
     return res.json({ data: planSlot });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.post("/v1/plan/advance", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const plan = await store.getPlan(userId);
+    if (!plan.next) {
+      return res.status(409).json({ error: "Next plan is empty" });
+    }
+
+    await store.setPlanSlot(userId, "current", {
+      ...plan.next,
+      appliedAt: nowIso(),
+    });
+    await store.clearPlanSlot(userId, "next");
+
+    const updated = await store.getPlan(userId);
+    return res.json({ data: updated });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
     return res.status(500).json({ error: message });
@@ -701,6 +1022,18 @@ app.patch("/v1/shopping-list/items/:id", async (req, res) => {
     const updated = await store.updateShoppingItem(userId, req.params.id, req.body ?? {});
     if (!updated) return res.status(404).json({ error: "Shopping item not found" });
     return res.json({ data: updated });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.delete("/v1/shopping-list/items/:id", async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const deleted = await store.deleteShoppingItem(userId, req.params.id);
+    if (!deleted) return res.status(404).json({ error: "Shopping item not found" });
+    return res.json({ data: { id: req.params.id, deleted: true } });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
     return res.status(500).json({ error: message });
@@ -820,3 +1153,4 @@ if (!process.env.AWS_LAMBDA_FUNCTION_NAME) {
     console.log(`========================================\n`);
   });
 }
+

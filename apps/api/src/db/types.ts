@@ -138,9 +138,18 @@ export type DataStore = {
   getSet(userId: string, setId: string): Promise<SetRecord | null>;
   updateSet(userId: string, setId: string, patch: Partial<SetRecord>): Promise<SetRecord | null>;
   deleteSet(userId: string, setId: string): Promise<boolean>;
+  listCatalogRecipes(): Promise<RecipeRecord[]>;
+  listCatalogSets(): Promise<SetRecord[]>;
+  getCatalogRecipe(recipeId: string): Promise<RecipeRecord | null>;
+  getCatalogSet(setId: string): Promise<SetRecord | null>;
+  saveCatalogRecipe(userId: string, recipeId: string): Promise<RecipeRecord | null>;
+  unsaveCatalogRecipe(userId: string, recipeId: string): Promise<boolean>;
+  saveCatalogSet(userId: string, setId: string): Promise<SetRecord | null>;
+  unsaveCatalogSet(userId: string, setId: string): Promise<boolean>;
 
   getPlan(userId: string): Promise<PlanRecord>;
   setPlanSlot(userId: string, slot: "current" | "next", data: PlanSlotRecord): Promise<PlanSlotRecord>;
+  clearPlanSlot(userId: string, slot: "current" | "next"): Promise<void>;
   updatePlanItemCooked(
     userId: string,
     itemId: string,
@@ -157,6 +166,7 @@ export type DataStore = {
     itemId: string,
     patch: Partial<ShoppingItemRecord>
   ): Promise<ShoppingItemRecord | null>;
+  deleteShoppingItem(userId: string, itemId: string): Promise<boolean>;
   completeShopping(userId: string): Promise<{ movedToFridge: number; remaining: number }>;
 
   listFridgeItems(userId: string): Promise<FridgeItemRecord[]>;
