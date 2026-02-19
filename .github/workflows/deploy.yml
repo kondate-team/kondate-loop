@@ -359,13 +359,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Resolve prod role
+        id: prod-role
+        run: |
+          ROLE_ARN="${{ vars.AWS_ROLE_ARN_PROD }}"
+
+          if [ -z "$ROLE_ARN" ]; then
+            echo "::warning::Repository variable AWS_ROLE_ARN_PROD is not configured. Skipping prod deploy."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+
       - name: Configure AWS Credentials (OIDC)
+        if: steps.prod-role.outputs.enabled == 'true'
         uses: aws-actions/configure-aws-credentials@v5
         with:
           aws-region: ${{ vars.AWS_REGION || 'ap-northeast-1' }}
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ steps.prod-role.outputs.role_arn }}
 
       - name: Deploy CloudFormation (prod)
+        if: steps.prod-role.outputs.enabled == 'true'
         run: |
           ENV_NAME=prod
           INFRA_STACK_NAME="${{ vars.CFN_STACK_NAME_PROD }}"
@@ -434,6 +450,7 @@ jobs:
           done
 
       - name: Build frontend
+        if: steps.prod-role.outputs.enabled == 'true'
         run: |
           npm ci --include=optional
           node -e "require.resolve('@rollup/rollup-linux-x64-gnu')" || npm -w apps/web i --no-save @rollup/rollup-linux-x64-gnu
@@ -441,6 +458,7 @@ jobs:
           npm run build --workspace=apps/web
 
       - name: Upload frontend to S3 (prod)
+        if: steps.prod-role.outputs.enabled == 'true'
         run: |
           FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET_PROD }}"
           if [ -z "$FRONTEND_BUCKET" ]; then FRONTEND_BUCKET="${{ vars.FRONTEND_BUCKET }}"; fi

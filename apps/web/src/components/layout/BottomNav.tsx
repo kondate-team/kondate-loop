@@ -1,5 +1,5 @@
 import * as React from "react"
-import { BookOpen, CalendarDays, Store, UserCircle } from "lucide-react"
+import { BookOpen, Layers, Store, UserCircle } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { FEATURES } from "@/lib/features"
@@ -12,7 +12,7 @@ const allNavItems: {
   icon: React.ReactNode
   enabled: boolean
 }[] = [
-  { id: "kondate", label: "献立表", icon: <CalendarDays className="h-6 w-6" />, enabled: true },
+  { id: "kondate", label: "こんだて", icon: <Layers className="h-6 w-6" />, enabled: true },
   { id: "book", label: "レシピ帳", icon: <BookOpen className="h-6 w-6" />, enabled: true },
   { id: "catalog", label: "レシピカタログ", icon: <Store className="h-6 w-6" />, enabled: FEATURES.CATALOG_ENABLED },
   { id: "mypage", label: "マイページ", icon: <UserCircle className="h-6 w-6" />, enabled: FEATURES.MYPAGE_ENABLED },
