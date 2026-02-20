@@ -253,6 +253,26 @@ jobs:
 
           TEST_USER_ID="gha-smoke-${GITHUB_RUN_ID}"
           TEST_TITLE="GHA Smoke ${GITHUB_SHA::7}"
+          SMOKE_EMAIL="gha-smoke-${GITHUB_RUN_ID}-${GITHUB_SHA::7}@example.com"
+          SMOKE_PASSWORD="GhaSmoke123!"
+          AUTH_SIGNUP_URL="${API_BASE%/v1}/v1/auth/signup"
+          AUTH_HTTP_CODE=$(curl -sS -o /tmp/auth_signup_response.json -w "%{http_code}" \
+            -X POST "${AUTH_SIGNUP_URL}" \
+            -H "content-type: application/json" \
+            -d "{\"name\":\"GHA Smoke User\",\"email\":\"${SMOKE_EMAIL}\",\"password\":\"${SMOKE_PASSWORD}\"}")
+          AUTH_RESPONSE=$(cat /tmp/auth_signup_response.json)
+          echo "POST ${AUTH_SIGNUP_URL} -> ${AUTH_HTTP_CODE}"
+          echo "Auth response: ${AUTH_RESPONSE}"
+          if [ "${AUTH_HTTP_CODE}" != "200" ]; then
+            echo "Auth bootstrap failed in smoke test." >&2
+            exit 1
+          fi
+          SMOKE_ACCESS_TOKEN=$(python -c "import sys,json; print((json.load(sys.stdin).get('data') or {}).get('accessToken',''))" <<< "${AUTH_RESPONSE}")
+          SMOKE_USER_ID=$(python -c "import sys,json; print((((json.load(sys.stdin).get('data') or {}).get('user') or {}).get('id','')))" <<< "${AUTH_RESPONSE}")
+          if [ -z "${SMOKE_ACCESS_TOKEN}" ] || [ -z "${SMOKE_USER_ID}" ]; then
+            echo "Auth bootstrap did not return accessToken/user.id." >&2
+            exit 1
+          fi
           CANDIDATE_URLS=(
             "${API_BASE}/recipes"
             "${API_BASE}/v1/recipes"
@@ -265,6 +285,7 @@ jobs:
             HTTP_CODE=$(curl -sS -o /tmp/recipe_response.json -w "%{http_code}" \
               -X POST "${URL}" \
               -H "content-type: application/json" \
+              -H "authorization: Bearer ${SMOKE_ACCESS_TOKEN}" \
               -d "{\"userId\":\"${TEST_USER_ID}\",\"title\":\"${TEST_TITLE}\",\"servings\":2}")
             RESPONSE=$(cat /tmp/recipe_response.json)
             echo "POST ${URL} -> ${HTTP_CODE}"
@@ -280,7 +301,7 @@ jobs:
             echo "Recipe ID not returned from API. Falling back to direct Lambda invoke..." >&2
             PAYLOAD_FILE=/tmp/lambda_recipe_payload.json
             RESPONSE_FILE=/tmp/lambda_recipe_response.json
-            printf '%s' "{\"resource\":\"/v1/{proxy+}\",\"path\":\"/v1/recipes\",\"httpMethod\":\"POST\",\"headers\":{\"content-type\":\"application/json\"},\"requestContext\":{\"stage\":\"dev\",\"path\":\"/dev/v1/recipes\"},\"body\":\"{\\\"userId\\\":\\\"${TEST_USER_ID}\\\",\\\"title\\\":\\\"${TEST_TITLE}\\\",\\\"servings\\\":2}\",\"isBase64Encoded\":false}" > "${PAYLOAD_FILE}"
+            printf '%s' "{\"resource\":\"/v1/{proxy+}\",\"path\":\"/v1/recipes\",\"httpMethod\":\"POST\",\"headers\":{\"content-type\":\"application/json\",\"authorization\":\"Bearer ${SMOKE_ACCESS_TOKEN}\"},\"requestContext\":{\"stage\":\"dev\",\"path\":\"/dev/v1/recipes\"},\"body\":\"{\\\"userId\\\":\\\"${TEST_USER_ID}\\\",\\\"title\\\":\\\"${TEST_TITLE}\\\",\\\"servings\\\":2}\",\"isBase64Encoded\":false}" > "${PAYLOAD_FILE}"
             aws lambda invoke \
               --function-name "kondate-loop-dev-api-fn-proxy" \
               --payload "fileb://${PAYLOAD_FILE}" \
@@ -296,7 +317,7 @@ jobs:
             fi
           fi
 
-          PK="USER#${TEST_USER_ID}"
+          PK="USER#${SMOKE_USER_ID}"
           SK="RECIPE#${RECIPE_ID}"
           ITEM_PK=$(aws dynamodb get-item \
             --table-name "${TABLE_NAME}" \
