@@ -69,4 +69,5 @@
 - When Cognito env is configured, all `/v1/*` business routes now require `Authorization: Bearer <accessToken>` except health, auth bootstrap endpoints (`/v1/auth/signup|login|callback|refresh|logout` and `/auth/*`), and public share read endpoints (`/v1/share/recipe/:id`, `/v1/share/set/:id`).
 - Request identity for business APIs is now resolved from verified token claims (`resolveUserId` / `resolveUserEmail`) to prevent spoofed `userId` in body/query/header.
 - Frontend API client now automatically adds bearer token from local storage (`apps/web/src/api/client.ts` + `apps/web/src/services/authStorage.ts`).
+- Fixed route-level override bug for create APIs: `POST /v1/recipes` and `POST /v1/sets` now enforce server-resolved `userId` (`{ ...req.body, userId }`) so request body `userId` cannot bypass auth identity.
 - Remaining scope: API Gateway-level Cognito Authorizer and Hosted UI/OAuth code-exchange flow.

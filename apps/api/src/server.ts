@@ -1582,7 +1582,7 @@ app.post("/v1/recipes", async (req, res) => {
     if (!title || !servings) {
       return res.status(400).json({ error: "title and servings are required" });
     }
-    const recipe = await store.createRecipe({ userId, ...req.body });
+    const recipe = await store.createRecipe({ ...req.body, userId });
     return res.status(201).json({ data: recipe });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
@@ -1645,7 +1645,7 @@ app.post("/v1/sets", async (req, res) => {
     if (!title || !Array.isArray(recipeIds)) {
       return res.status(400).json({ error: "title and recipeIds are required" });
     }
-    const set = await store.createSet({ userId, ...req.body });
+    const set = await store.createSet({ ...req.body, userId });
     return res.status(201).json({ data: set });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
