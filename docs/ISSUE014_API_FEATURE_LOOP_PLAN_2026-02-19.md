@@ -1,147 +1,72 @@
-# Issue #014 API機能追加ループ計画（2026-02-19）
+# Issue #014 API機能ループ実装計画（2026-02-19）
 
 ## 1. 目的
-- API機能追加ループ（実装 -> ローカルテスト -> AWSデプロイ -> AWSスモーク）を回すための実装順とブランチ単位を確定する。
+- API設計との差分を段階的に解消し、ローカル実装からAWS検証までを一貫して完了させる。
+- 実装単位を小さく分け、各ブランチでスモーク確認が通るまで次に進まない運用を徹底する。
 
-## 2. 判定元
-- 実装コード: `apps/api/src/server.ts`
-- 永続層: `apps/api/src/db/dynamoStore.ts`, `apps/api/src/db/types.ts`
-- 仕様一覧: `docs/仕様まとめ_詳細な読み取り.md`（6-1 〜 6-12）
+## 2. 対象範囲
+- 主実装: `apps/api/src/server.ts`
+- 永続化層: `apps/api/src/db/fileStore.ts`, `apps/api/src/db/dynamoStore.ts`, `apps/api/src/db/types.ts`
+- 共有型: `packages/types/src/api/endpoints.ts`
+- フロント接続: `apps/web/src/services/auth.ts`
 
-## 3. 現在実装済み API（server.ts）
-### 3.1 既存で動いている主機能
-- Recipe: `GET/POST /v1/recipes`, `GET/PATCH/DELETE /v1/recipes/:id`
-- Set: `GET/POST /v1/sets`, `GET/PATCH/DELETE /v1/sets/:id`
-- Plan: `GET /v1/plan`, `POST /v1/plan/select-set`, `PATCH /v1/plan/items/:id`
-- Shopping: `GET /v1/shopping-list`, `POST /v1/shopping-list/items`, `PATCH /v1/shopping-list/items/:id`, `POST /v1/shopping-list/complete`
-- Fridge: `GET /v1/fridge`, `POST /v1/fridge/items`, `PATCH/DELETE /v1/fridge/items/:id`, `GET /v1/fridge/deleted`, `POST /v1/fridge/items/:id/restore`
-- Subscription/Payment(一部): `POST /v1/payment-methods`, `POST /v1/subscriptions`, `DELETE /v1/subscriptions`
-
-### 3.2 仕様外だが既にあるエンドポイント
-- Connect/Stripe連携: `POST /v1/connect/accounts`, `POST /v1/connect/account-links`, `GET /v1/connect/accounts/:userId`, `POST /v1/connect/login-links`
-- 購入系派生: `POST /v1/purchases/plan`, `POST /v1/purchases/content`
-- User参照: `GET /v1/users/:userId`
-
-## 4. 未実装 API（仕様との差分）
-### 4.1 優先度A（Coreギャップ埋め）
-- `POST /v1/plan/advance`
-- `DELETE /v1/shopping-list/items/{id}`
-- `POST /v1/import/parse`
-
-### 4.2 優先度B（認証/ユーザー）
-- `GET /v1/auth/me`（または仕様まとめ側の `/auth/session` を `/v1` 配下に揃える）
-- `PATCH /v1/me`
-- 認証系（必要なら）: `POST /v1/auth/callback`, `POST /v1/auth/refresh`, `POST /v1/auth/logout`
-
-### 4.3 優先度C（カタログ/共有）
-- Catalog:
-  - `GET /v1/catalog/recipes`
-  - `GET /v1/catalog/sets`
-  - `GET /v1/catalog/recipes/{id}`
-  - `GET /v1/catalog/sets/{id}`
-  - `POST /v1/catalog/recipes/{id}/save`
-  - `DELETE /v1/catalog/recipes/{id}/save`
-  - `POST /v1/catalog/sets/{id}/save`
-  - `DELETE /v1/catalog/sets/{id}/save`
-  - `POST /v1/catalog/recipes/{id}/purchase`
-  - `POST /v1/catalog/sets/{id}/purchase`
-- Share:
-  - `POST /v1/share`
-  - `GET /v1/share/recipe/{id}`
-  - `GET /v1/share/set/{id}`
-
-### 4.4 優先度D（カテゴリ/アーカイブ）
-- Category:
-  - `GET /v1/categories`
-  - `POST /v1/categories`
-  - `PATCH /v1/categories/{id}`
-  - `DELETE /v1/categories/{id}`
-- Archive:
-  - `GET /v1/archive`
-  - `GET /v1/archive/{date}`
-
-### 4.5 優先度E（決済読み取り系と通知）
-- Payment/Subscription read系:
-  - `GET /v1/payment-methods`
-  - `DELETE /v1/payment-methods/{id}`
-  - `POST /v1/purchases`
-  - `GET /v1/purchases`
-  - `GET /v1/subscriptions`
-- Notification:
-  - `GET /v1/notifications`
-  - `POST /v1/notifications/read`
-  - `POST /v1/push-tokens`
-  - `DELETE /v1/push-tokens/{token}`
-  - `GET /v1/notification-settings`
-  - `PATCH /v1/notification-settings`
-
-## 5. ブランチ戦略（dev起点）
-- `feature/015-api-core-gap`:
+## 3. ブランチ分割方針
+- `feature/015-api-core-gap`
   - `POST /v1/plan/advance`
   - `DELETE /v1/shopping-list/items/{id}`
   - `POST /v1/import/parse`
-- `feature/016-api-auth-user`:
-  - `GET /v1/auth/me`, `PATCH /v1/me`
-  - （必要時）auth callback/refresh/logout
-- `feature/017-api-catalog-share`:
-  - Catalog + Share 一式
-- `feature/018-api-category-archive`:
-  - Category + Archive 一式
-- `feature/019-api-payment-read-notification`:
-  - Payment/Subscription read系 + Notification 一式
-
-## 6. ループ運用ルール（実装時）
-- 各ブランチで以下を最小単位で回す:
-  1. ローカル実装（`apps/api/src/server.ts` + `apps/api/src/db/*`）
-  2. ローカルテスト（ユニットまたは `npm run smoke:api --workspace=apps/api`）
-  3. AWSデプロイ（dev環境）
-  4. AWSスモーク（API Gateway経由で 2xx とDynamoDB反映確認）
-- スモークが通るまで次ブランチへ進まない。
-
-## 7. Progress Log (2026-02-19)
-- Branch: `feature/018-api-category-archive`
-- Implemented endpoints:
-  - `GET /v1/categories`
-  - `POST /v1/categories`
-  - `PATCH /v1/categories/{id}`
-  - `DELETE /v1/categories/{id}`
-  - `GET /v1/archive`
-  - `GET /v1/archive/{date}`
-- Added datastore support for `Category` and cooking logs in both file and Dynamo implementations.
-- Added cooking log recording when `PATCH /v1/plan/items/{id}` sets `isCooked=true`.
-- Local verification: `npm run smoke:api --workspace=apps/api` passed.
-- Branch: `feature/019-api-payment-read-notification`
-- Implemented endpoints:
-  - `GET /v1/payment-methods`
-  - `DELETE /v1/payment-methods/{id}`
-  - `POST /v1/purchases`
-  - `GET /v1/purchases`
-  - `GET /v1/subscriptions`
-  - `GET /v1/notifications`
-  - `POST /v1/notifications/read`
-  - `POST /v1/push-tokens`
-  - `DELETE /v1/push-tokens/{token}`
-  - `GET /v1/notification-settings`
-  - `PATCH /v1/notification-settings`
-- Added datastore support (file + dynamo): payment methods, purchases, subscriptions, notifications, push tokens, notification settings.
-- Wired existing endpoints to persist payment/subscription/purchase data where applicable.
-- Local verification: `npm run build --workspace=apps/api` and `npm run smoke:api --workspace=apps/api` passed.
-- Branch: `feature/015-api-core-gap`
-- Implemented endpoints:
-  - `POST /v1/plan/advance`
-  - `DELETE /v1/shopping-list/items/{id}`
-  - `POST /v1/import/parse`
-- Local verification: `npm run smoke:api --workspace=apps/api` passed.
-
-- Branch: `feature/016-api-auth-user`
-- Implemented endpoints:
+- `feature/016-api-auth-user`
   - `GET /v1/auth/me`
   - `PATCH /v1/me`
-- Added profile handling in datastore (`name`, `role`, `avatarUrl`, `createdAt`, `updatedAt`) for file + dynamo.
-- Local verification: branch workflow passed on push (`feature/016-api-auth-user`).
+  - 認証系の不足分（callback/refresh/logout）は後続で継続実装
+- `feature/017-api-catalog-share`
+  - Catalog / Share 系エンドポイント一式
+- `feature/018-api-category-archive`
+  - Category / Archive 系エンドポイント一式
+- `feature/019-api-payment-read-notification`
+  - Payment/Subscription 読み取り系、Notification 系
+  - 追加対応: 認証不足分 (`/v1/auth/callback`, `/v1/auth/refresh`, `/v1/auth/logout`)
 
-- Branch: `feature/017-api-catalog-share`
-- Implemented endpoints:
+## 4. 実行手順（最小単位）
+各ブランチで以下を順番に実施する。
+
+1. ローカル実装
+   - `apps/api/src/server.ts` と `apps/api/src/db/*` を更新
+2. ローカル検証
+   - `npm run build --workspace=apps/api`
+   - `npm run smoke:api --workspace=apps/api`
+3. AWSデプロイ（dev）
+   - GitHub Actions `Deploy`（featureブランチ push）
+4. AWSスモーク
+   - API Gateway経由の2xx確認
+   - DynamoDBへの反映確認（ワークフロー内スモーク）
+
+## 5. 進捗記録
+
+### 5-1. `feature/015-api-core-gap`
+- 実装済み:
+  - `POST /v1/plan/advance`
+  - `DELETE /v1/shopping-list/items/{id}`
+  - `POST /v1/import/parse`
+- ローカル検証:
+  - `npm run smoke:api --workspace=apps/api` 成功
+- AWS検証:
+  - `Deploy` 成功（Run: `22178155338`）
+
+### 5-2. `feature/016-api-auth-user`
+- 実装済み:
+  - `GET /v1/auth/me`
+  - `PATCH /v1/me`
+- データストア対応:
+  - `name`, `role`, `avatarUrl`, `createdAt`, `updatedAt` を file/dynamo 双方で扱うよう更新
+- ローカル検証:
+  - ブランチ作業時点でローカル確認済み
+- AWS検証:
+  - `Deploy` 成功（Run: `22186064652`）
+  - 同一SHAで `Deploy dev to GitHub Pages` も成功（Run: `22186064613`）
+
+### 5-3. `feature/017-api-catalog-share`
+- 実装済み:
   - `GET /v1/catalog/recipes`
   - `GET /v1/catalog/sets`
   - `GET /v1/catalog/recipes/{id}`
@@ -155,29 +80,62 @@
   - `POST /v1/share`
   - `GET /v1/share/recipe/{id}`
   - `GET /v1/share/set/{id}`
-- Local verification: branch workflow passed on push (`feature/017-api-catalog-share`).
+- ローカル検証:
+  - ブランチ作業時点でローカル確認済み
+- AWS検証:
+  - `Deploy` 成功（Run: `22179166316`）
 
-- Branch: `feature/019-api-payment-read-notification`（2026-02-20 更新）
-- 認証エンドポイントを実装:
+### 5-4. `feature/018-api-category-archive`
+- 実装済み:
+  - `GET /v1/categories`
+  - `POST /v1/categories`
+  - `PATCH /v1/categories/{id}`
+  - `DELETE /v1/categories/{id}`
+  - `GET /v1/archive`
+  - `GET /v1/archive/{date}`
+- 追加対応:
+  - `PATCH /v1/plan/items/{id}` で `isCooked=true` のとき調理ログ保存
+- ローカル検証:
+  - `npm run smoke:api --workspace=apps/api` 成功
+- AWS検証:
+  - `Deploy` 成功（Run: `22182400590`）
+
+### 5-5. `feature/019-api-payment-read-notification`
+- 実装済み（既存）:
+  - `GET /v1/payment-methods`
+  - `DELETE /v1/payment-methods/{id}`
+  - `POST /v1/purchases`
+  - `GET /v1/purchases`
+  - `GET /v1/subscriptions`
+  - `GET /v1/notifications`
+  - `POST /v1/notifications/read`
+  - `POST /v1/push-tokens`
+  - `DELETE /v1/push-tokens/{token}`
+  - `GET /v1/notification-settings`
+  - `PATCH /v1/notification-settings`
+- 実装済み（2026-02-20 追加）:
   - `POST /v1/auth/callback`
   - `POST /v1/auth/refresh`
   - `POST /v1/auth/logout`
-- 互換用エイリアスを追加:
-  - `POST /auth/callback`
-  - `POST /auth/refresh`
-  - `POST /auth/logout`
-- ローカル確認: `npm run build --workspace=apps/api` と `npm run smoke:api --workspace=apps/api` が成功。
+  - 互換用: `POST /auth/callback`, `POST /auth/refresh`, `POST /auth/logout`
+- フロント/型更新（2026-02-20）:
+  - `apps/web/src/services/auth.ts` を `/v1/auth/*` に接続
+  - `packages/types/src/api/endpoints.ts` に auth callback/refresh/logout の型を追加
+- ローカル検証:
+  - `npm run build --workspace=apps/api` 成功
+  - `npm run smoke:api --workspace=apps/api` 成功
+  - `npm run build --workspace=packages/types` 成功
+  - `npm run build --workspace=apps/web` 成功
+- 備考:
+  - `apps/web` ビルド失敗の原因だった optional 依存不足を解消
+  - `@rollup/rollup-win32-x64-msvc` を `apps/web` の optionalDependencies に追加
+- AWS検証:
+  - `Deploy` 成功（Run: `22214691416`）
 
-- Branch: `feature/019-api-payment-read-notification`（2026-02-20 フロント/型 更新）
-- フロント認証サービス（`apps/web/src/services/auth.ts`）を以下に接続:
-  - `POST /v1/auth/callback`
-  - `POST /v1/auth/refresh`
-  - `POST /v1/auth/logout`
-- 共有API型（`packages/types/src/api/endpoints.ts`）を追加:
-  - `PostAuthCallbackRequest` / `PostAuthCallbackResponse`
-  - `PostAuthRefreshRequest` / `PostAuthRefreshResponse`
-  - `PostAuthLogoutRequest` / `PostAuthLogoutResponse`
-- ローカル確認:
-  - `npm run build --workspace=packages/types` が成功。
-  - `npm run build --workspace=apps/web` 初回失敗の原因は Rollup の optional 依存（`@rollup/rollup-win32-x64-msvc`）不足。
-  - `apps/web` の optionalDependencies に `@rollup/rollup-win32-x64-msvc` を追加後、再ビルド成功。
+## 6. 現時点の判定（15〜19）
+- 5ブランチすべてで、最新リモートSHAに対する `Deploy` 成功を確認済み。
+- ブランチ単位の実装・検証サイクルは、運用方針どおり完了状態。
+
+## 7. 次アクション
+- 必要に応じて `dev` への取り込み順（15→16→17→18→19）を最終確認する。
+- 取り込み時は各PRで `Deploy` の再実行結果を確認し、回帰がないことを担保する。
