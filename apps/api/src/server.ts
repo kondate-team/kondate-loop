@@ -19,7 +19,23 @@ import type {
 dotenv.config();
 
 const PORT = Number(process.env.PORT ?? 4242);
-const CORS_ORIGIN = process.env.CORS_ORIGIN ?? "http://localhost:5173";
+const DEFAULT_CORS_ORIGINS = [
+  "http://localhost:5173",
+  "https://da8ahpdul87cu.cloudfront.net",
+];
+
+function parseCorsOrigins(rawValue: string | undefined): string[] {
+  const origins = rawValue
+    ?.split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  if (!origins || origins.length === 0) {
+    return DEFAULT_CORS_ORIGINS;
+  }
+  return Array.from(new Set(origins));
+}
+
+const CORS_ORIGINS = parseCorsOrigins(process.env.CORS_ORIGINS ?? process.env.CORS_ORIGIN);
 
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY ?? "sk_test_dummy";
 if (!process.env.STRIPE_SECRET_KEY) {
@@ -36,6 +52,7 @@ const SHARE_BASE_URL = process.env.SHARE_BASE_URL ?? "https://kondate-loop.com";
 const stripe = new Stripe(STRIPE_SECRET_KEY);
 const store = createDataStore();
 export const app = express();
+console.info(`[bootstrap] CORS origins: ${CORS_ORIGINS.join(", ")}`);
 const DEFAULT_CATEGORY_THEMES: Record<CategoryScope, string[]> = {
   book: ["muted", "amber"],
   catalog: ["muted", "sky"],
@@ -295,7 +312,18 @@ async function handleWebhookEvent(event: Stripe.Event) {
   }
 }
 
-app.use(cors({ origin: CORS_ORIGIN, credentials: true }));
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || CORS_ORIGINS.includes("*") || CORS_ORIGINS.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(null, false);
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
