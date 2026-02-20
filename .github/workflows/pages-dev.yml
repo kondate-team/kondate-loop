@@ -28,6 +28,8 @@ jobs:
       - run: npm run build --workspace=packages/types
       - run: npm run build --workspace=apps/web
         env:
+          VITE_API_USE_MOCK: 'false'
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL_DEV || 'https://9xgpv0z4r7.execute-api.ap-northeast-1.amazonaws.com/dev' }}
           GITHUB_PAGES: 'true'
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
