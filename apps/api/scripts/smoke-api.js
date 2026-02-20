@@ -47,6 +47,26 @@ async function waitForHealth(maxRetry = 30) {
 }
 
 async function runSmoke() {
+  const smokeEmail = `smoke-user+${Date.now()}@example.com`;
+  const smokePassword = "SmokePass123!";
+
+  const authSignup = await request("POST", "/v1/auth/signup", {
+    name: "Smoke User",
+    email: smokeEmail,
+    password: smokePassword,
+  });
+  assert.strictEqual(authSignup.status, 200, "auth signup failed");
+  assert.ok(authSignup.json?.data?.accessToken, "auth signup accessToken not returned");
+  assert.ok(authSignup.json?.data?.refreshToken, "auth signup refreshToken not returned");
+
+  const authLogin = await request("POST", "/v1/auth/login", {
+    email: smokeEmail,
+    password: smokePassword,
+  });
+  assert.strictEqual(authLogin.status, 200, "auth login failed");
+  assert.ok(authLogin.json?.data?.accessToken, "auth login accessToken not returned");
+  assert.ok(authLogin.json?.data?.refreshToken, "auth login refreshToken not returned");
+
   const authCallback = await request("POST", "/v1/auth/callback", {
     userId,
     email: "smoke-user@example.com",
@@ -60,13 +80,13 @@ async function runSmoke() {
   const authRefresh = await request("POST", "/v1/auth/refresh", {
     userId,
     email: "smoke-user@example.com",
-    refreshToken: authCallback.json?.data?.refreshToken,
+    refreshToken: authLogin.json?.data?.refreshToken,
   });
   assert.strictEqual(authRefresh.status, 200, "auth refresh failed");
   assert.ok(authRefresh.json?.data?.accessToken, "auth refresh accessToken not returned");
 
   const authLogout = await request("POST", "/auth/logout", {
-    refreshToken: authCallback.json?.data?.refreshToken,
+    refreshToken: authLogin.json?.data?.refreshToken,
   });
   assert.strictEqual(authLogout.status, 200, "auth logout failed");
   assert.strictEqual(authLogout.json?.data?.loggedOut, true, "auth logout response is invalid");

@@ -47,6 +47,19 @@ type RefreshRequest = {
   email?: string
 }
 
+type LoginRequest = {
+  email: string
+  password: string
+  userId?: string
+}
+
+type SignupRequest = {
+  name: string
+  email: string
+  password: string
+  userId?: string
+}
+
 type ApiEnvelope<T> = {
   data: T
 }
@@ -164,20 +177,56 @@ export async function refreshSession(request?: Partial<RefreshRequest>): Promise
 }
 
 export async function login(email: string, password: string): Promise<AuthSession> {
-  return authCallback({
-    userId: resolveUserIdFromEmail(email),
-    email,
-    accessToken: `password-login:${password.length}`,
+  if (API_USE_MOCK) {
+    return {
+      user: { id: "mock-user", name: "Mock User", role: "user" },
+      accessToken: "mock-access-token",
+      refreshToken: "mock-refresh-token",
+      tokenType: "Bearer",
+      expiresIn: 3600,
+      issuedAt: new Date().toISOString(),
+      token: "mock-access-token",
+    }
+  }
+
+  const response = await apiFetch<ApiEnvelope<AuthSessionResponseBody>>("/v1/auth/login", {
+    method: "POST",
+    body: JSON.stringify({
+      userId: resolveUserIdFromEmail(email),
+      email,
+      password,
+    } as LoginRequest),
   })
+  const session = toAuthSession(response.data)
+  persistSession(session)
+  return session
 }
 
 export async function signup(name: string, email: string, password: string): Promise<AuthSession> {
-  return authCallback({
-    userId: resolveUserIdFromEmail(email),
-    email,
-    name,
-    code: `signup:${password.length}`,
+  if (API_USE_MOCK) {
+    return {
+      user: { id: "mock-user", name: name || "Mock User", role: "user" },
+      accessToken: "mock-access-token",
+      refreshToken: "mock-refresh-token",
+      tokenType: "Bearer",
+      expiresIn: 3600,
+      issuedAt: new Date().toISOString(),
+      token: "mock-access-token",
+    }
+  }
+
+  const response = await apiFetch<ApiEnvelope<AuthSessionResponseBody>>("/v1/auth/signup", {
+    method: "POST",
+    body: JSON.stringify({
+      userId: resolveUserIdFromEmail(email),
+      name,
+      email,
+      password,
+    } as SignupRequest),
   })
+  const session = toAuthSession(response.data)
+  persistSession(session)
+  return session
 }
 
 export async function changeRole(role: ApiUserRole): Promise<ApiUser> {

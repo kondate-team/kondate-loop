@@ -3,6 +3,16 @@ import cors from "cors";
 import dotenv from "dotenv";
 import Stripe from "stripe";
 import { randomUUID } from "crypto";
+import {
+  AdminConfirmSignUpCommand,
+  CognitoIdentityProviderClient,
+  GetUserCommand,
+  GlobalSignOutCommand,
+  InitiateAuthCommand,
+  RevokeTokenCommand,
+  SignUpCommand,
+  type AuthenticationResultType,
+} from "@aws-sdk/client-cognito-identity-provider";
 import { createDataStore } from "./db/storeFactory";
 import type {
   CategoryRecord,
@@ -37,6 +47,24 @@ function parseCorsOrigins(rawValue: string | undefined): string[] {
 
 const CORS_ORIGINS = parseCorsOrigins(process.env.CORS_ORIGINS ?? process.env.CORS_ORIGIN);
 
+function resolveOptionalEnvString(value: string | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+const COGNITO_USER_POOL_ID = resolveOptionalEnvString(process.env.COGNITO_USER_POOL_ID);
+const COGNITO_CLIENT_ID = resolveOptionalEnvString(process.env.COGNITO_CLIENT_ID);
+const COGNITO_REGION =
+  resolveOptionalEnvString(process.env.COGNITO_REGION) ??
+  resolveOptionalEnvString(process.env.AWS_REGION) ??
+  resolveOptionalEnvString(process.env.AWS_DEFAULT_REGION) ??
+  "ap-northeast-1";
+const COGNITO_AUTH_ENABLED = Boolean(COGNITO_USER_POOL_ID && COGNITO_CLIENT_ID);
+const cognitoClient = COGNITO_AUTH_ENABLED
+  ? new CognitoIdentityProviderClient({ region: COGNITO_REGION })
+  : null;
+
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY ?? "sk_test_dummy";
 if (!process.env.STRIPE_SECRET_KEY) {
   console.warn("STRIPE_SECRET_KEY is not set. Stripe endpoints will fail until configured.");
@@ -53,6 +81,11 @@ const stripe = new Stripe(STRIPE_SECRET_KEY);
 const store = createDataStore();
 export const app = express();
 console.info(`[bootstrap] CORS origins: ${CORS_ORIGINS.join(", ")}`);
+if (COGNITO_AUTH_ENABLED) {
+  console.info(
+    `[bootstrap] Cognito auth enabled: region=${COGNITO_REGION}, userPoolId=${COGNITO_USER_POOL_ID}`
+  );
+}
 const DEFAULT_CATEGORY_THEMES: Record<CategoryScope, string[]> = {
   book: ["muted", "amber"],
   catalog: ["muted", "sky"],
@@ -110,6 +143,12 @@ type AuthSessionResponse = {
   issuedAt: string;
 };
 
+type CognitoIdentity = {
+  userId: string;
+  email: string;
+  name: string | null;
+};
+
 const AUTH_ACCESS_TOKEN_EXPIRES_IN_SECONDS = Number(
   process.env.AUTH_ACCESS_TOKEN_EXPIRES_IN_SECONDS ?? 60 * 60
 );
@@ -120,16 +159,217 @@ function resolveNonEmptyString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function resolveErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  return "unknown error";
+}
+
+function resolveCognitoErrorStatus(error: unknown): number {
+  const name = error instanceof Error ? error.name : "";
+  switch (name) {
+    case "NotAuthorizedException":
+    case "UserNotFoundException":
+    case "UserNotConfirmedException":
+      return 401;
+    case "UsernameExistsException":
+    case "InvalidPasswordException":
+    case "InvalidParameterException":
+      return 400;
+    default:
+      return 500;
+  }
+}
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+function deriveUserIdFromEmail(email: string): string {
+  const safe = normalizeEmail(email).replace(/[^a-z0-9._-]+/g, "_");
+  return `user_${safe || "demo"}`;
+}
+
+function resolveBearerAccessToken(req: express.Request): string | null {
+  const authHeader = req.headers.authorization;
+  if (typeof authHeader !== "string") return null;
+  const [scheme, token] = authHeader.split(/\s+/);
+  if (!scheme || !token) return null;
+  return scheme.toLowerCase() === "bearer" ? token.trim() : null;
+}
+
+function requireCognitoConfig(): {
+  client: CognitoIdentityProviderClient;
+  userPoolId: string;
+  clientId: string;
+} {
+  if (!cognitoClient || !COGNITO_USER_POOL_ID || !COGNITO_CLIENT_ID) {
+    throw new Error("Cognito configuration is missing");
+  }
+  return {
+    client: cognitoClient,
+    userPoolId: COGNITO_USER_POOL_ID,
+    clientId: COGNITO_CLIENT_ID,
+  };
+}
+
+function toCognitoSession(
+  result: AuthenticationResultType | undefined,
+  fallbackRefreshToken?: string
+): { accessToken: string; refreshToken: string; expiresIn: number } {
+  const accessToken = resolveNonEmptyString(result?.AccessToken);
+  const refreshToken = resolveNonEmptyString(result?.RefreshToken) ?? fallbackRefreshToken ?? null;
+  if (!accessToken) {
+    throw new Error("Cognito access token was not returned");
+  }
+  if (!refreshToken) {
+    throw new Error("Cognito refresh token was not returned");
+  }
+  return {
+    accessToken,
+    refreshToken,
+    expiresIn: result?.ExpiresIn ?? AUTH_ACCESS_TOKEN_EXPIRES_IN_SECONDS,
+  };
+}
+
+async function loadCognitoIdentityByAccessToken(accessToken: string): Promise<CognitoIdentity> {
+  const { client } = requireCognitoConfig();
+  const response = await client.send(new GetUserCommand({ AccessToken: accessToken }));
+  const attrs = new Map<string, string>();
+  for (const attribute of response.UserAttributes ?? []) {
+    if (attribute.Name && attribute.Value) {
+      attrs.set(attribute.Name, attribute.Value);
+    }
+  }
+
+  const userId = attrs.get("sub") ?? response.Username ?? null;
+  if (!userId) {
+    throw new Error("Cognito user id is missing");
+  }
+  const email = normalizeEmail(attrs.get("email") ?? `${userId}@example.com`);
+  const name = attrs.get("name") ?? null;
+  return { userId, email, name };
+}
+
+async function ensureAuthUserByIdentity(identity: CognitoIdentity): Promise<UserRecord> {
+  let user = await store.getUser(identity.userId);
+  if (!user) {
+    user = await store.upsertUser(identity.userId, identity.email);
+  } else if (!user.email) {
+    user = (await store.updateUser(identity.userId, { email: identity.email })) ?? user;
+  }
+
+  const patch: Partial<UserRecord> = {};
+  if (identity.name && identity.name.length <= 50 && identity.name !== user.name) {
+    patch.name = identity.name;
+  }
+  if (Object.keys(patch).length > 0) {
+    user = (await store.updateUser(identity.userId, patch)) ?? user;
+  }
+  return user;
+}
+
 async function ensureAuthUser(req: express.Request): Promise<UserRecord> {
   const userId = resolveUserId(req);
   const email = resolveUserEmail(req, userId);
-  let user = await store.getUser(userId);
-  if (!user) {
-    user = await store.upsertUser(userId, email);
-  } else if (!user.email) {
-    user = (await store.updateUser(userId, { email })) ?? user;
+  return ensureAuthUserByIdentity({ userId, email: normalizeEmail(email), name: null });
+}
+
+async function cognitoSignUpAndAuthenticate(
+  email: string,
+  password: string,
+  name: string | null
+): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
+  const { client, userPoolId, clientId } = requireCognitoConfig();
+  const signUpResult = await client.send(
+    new SignUpCommand({
+      ClientId: clientId,
+      Username: email,
+      Password: password,
+      UserAttributes: [
+        { Name: "email", Value: email },
+        ...(name ? [{ Name: "name", Value: name }] : []),
+      ],
+    })
+  );
+  if (!signUpResult.UserConfirmed) {
+    await client.send(
+      new AdminConfirmSignUpCommand({
+        UserPoolId: userPoolId,
+        Username: email,
+      })
+    );
   }
-  return user;
+  const auth = await client.send(
+    new InitiateAuthCommand({
+      AuthFlow: "USER_PASSWORD_AUTH",
+      ClientId: clientId,
+      AuthParameters: {
+        USERNAME: email,
+        PASSWORD: password,
+      },
+    })
+  );
+  return toCognitoSession(auth.AuthenticationResult);
+}
+
+async function cognitoLogin(
+  email: string,
+  password: string
+): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
+  const { client, clientId } = requireCognitoConfig();
+  const auth = await client.send(
+    new InitiateAuthCommand({
+      AuthFlow: "USER_PASSWORD_AUTH",
+      ClientId: clientId,
+      AuthParameters: {
+        USERNAME: email,
+        PASSWORD: password,
+      },
+    })
+  );
+  return toCognitoSession(auth.AuthenticationResult);
+}
+
+async function cognitoRefresh(
+  refreshToken: string
+): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
+  const { client, clientId } = requireCognitoConfig();
+  const auth = await client.send(
+    new InitiateAuthCommand({
+      AuthFlow: "REFRESH_TOKEN_AUTH",
+      ClientId: clientId,
+      AuthParameters: {
+        REFRESH_TOKEN: refreshToken,
+      },
+    })
+  );
+  return toCognitoSession(auth.AuthenticationResult, refreshToken);
+}
+
+async function cognitoLogout(accessToken?: string | null, refreshToken?: string | null): Promise<boolean> {
+  const { client, clientId } = requireCognitoConfig();
+  let revokedRefreshToken = false;
+  if (accessToken) {
+    try {
+      await client.send(new GlobalSignOutCommand({ AccessToken: accessToken }));
+    } catch (error: unknown) {
+      console.warn(`[auth] Cognito GlobalSignOut failed: ${resolveErrorMessage(error)}`);
+    }
+  }
+  if (refreshToken) {
+    try {
+      await client.send(
+        new RevokeTokenCommand({
+          ClientId: clientId,
+          Token: refreshToken,
+        })
+      );
+      revokedRefreshToken = true;
+    } catch (error: unknown) {
+      console.warn(`[auth] Cognito RevokeToken failed: ${resolveErrorMessage(error)}`);
+    }
+  }
+  return revokedRefreshToken;
 }
 
 function issueAuthSession(user: UserRecord, refreshToken?: string): AuthSessionResponse {
@@ -141,6 +381,20 @@ function issueAuthSession(user: UserRecord, refreshToken?: string): AuthSessionR
     tokenType: "Bearer",
     expiresIn: AUTH_ACCESS_TOKEN_EXPIRES_IN_SECONDS,
     issuedAt,
+  };
+}
+
+function issueCognitoAuthSession(
+  user: UserRecord,
+  tokenSet: { accessToken: string; refreshToken: string; expiresIn: number }
+): AuthSessionResponse {
+  return {
+    user: toMeResponse(user),
+    accessToken: tokenSet.accessToken,
+    refreshToken: tokenSet.refreshToken,
+    tokenType: "Bearer",
+    expiresIn: tokenSet.expiresIn,
+    issuedAt: nowIso(),
   };
 }
 
@@ -330,11 +584,83 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 
 app.get("/v1/auth/me", async (req, res) => {
   try {
+    if (COGNITO_AUTH_ENABLED) {
+      const accessToken = resolveBearerAccessToken(req);
+      if (!accessToken) {
+        return res.status(401).json({ error: "Authorization bearer token is required" });
+      }
+      const identity = await loadCognitoIdentityByAccessToken(accessToken);
+      const user = await ensureAuthUserByIdentity(identity);
+      return res.json({ data: toMeResponse(user) });
+    }
     const user = await ensureAuthUser(req);
     return res.json({ data: toMeResponse(user) });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "unknown error";
-    return res.status(500).json({ error: message });
+    const status = COGNITO_AUTH_ENABLED ? resolveCognitoErrorStatus(err) : 500;
+    return res.status(status).json({ error: resolveErrorMessage(err) });
+  }
+});
+
+app.post(["/v1/auth/signup", "/auth/signup"], async (req, res) => {
+  try {
+    const emailRaw = resolveNonEmptyString(req.body?.email);
+    const password = resolveNonEmptyString(req.body?.password);
+    const name = resolveNonEmptyString(req.body?.name);
+    if (!emailRaw || !password) {
+      return res.status(400).json({ error: "email and password are required" });
+    }
+    if (password.length < 8) {
+      return res.status(400).json({ error: "password must be at least 8 characters" });
+    }
+
+    const email = normalizeEmail(emailRaw);
+    if (COGNITO_AUTH_ENABLED) {
+      const tokenSet = await cognitoSignUpAndAuthenticate(email, password, name);
+      const identity = await loadCognitoIdentityByAccessToken(tokenSet.accessToken);
+      const user = await ensureAuthUserByIdentity({ ...identity, name: name ?? identity.name });
+      return res.json({ data: issueCognitoAuthSession(user, tokenSet) });
+    }
+
+    let user = await ensureAuthUserByIdentity({
+      userId: deriveUserIdFromEmail(email),
+      email,
+      name,
+    });
+    if (name && name.length <= 50) {
+      user = (await store.updateUser(user.userId, { name })) ?? user;
+    }
+    return res.json({ data: issueAuthSession(user) });
+  } catch (err: unknown) {
+    const status = COGNITO_AUTH_ENABLED ? resolveCognitoErrorStatus(err) : 500;
+    return res.status(status).json({ error: resolveErrorMessage(err) });
+  }
+});
+
+app.post(["/v1/auth/login", "/auth/login"], async (req, res) => {
+  try {
+    const emailRaw = resolveNonEmptyString(req.body?.email);
+    const password = resolveNonEmptyString(req.body?.password);
+    if (!emailRaw || !password) {
+      return res.status(400).json({ error: "email and password are required" });
+    }
+
+    const email = normalizeEmail(emailRaw);
+    if (COGNITO_AUTH_ENABLED) {
+      const tokenSet = await cognitoLogin(email, password);
+      const identity = await loadCognitoIdentityByAccessToken(tokenSet.accessToken);
+      const user = await ensureAuthUserByIdentity(identity);
+      return res.json({ data: issueCognitoAuthSession(user, tokenSet) });
+    }
+
+    const user = await ensureAuthUserByIdentity({
+      userId: deriveUserIdFromEmail(email),
+      email,
+      name: null,
+    });
+    return res.json({ data: issueAuthSession(user) });
+  } catch (err: unknown) {
+    const status = COGNITO_AUTH_ENABLED ? resolveCognitoErrorStatus(err) : 500;
+    return res.status(status).json({ error: resolveErrorMessage(err) });
   }
 });
 
@@ -345,6 +671,25 @@ app.post(["/v1/auth/callback", "/auth/callback"], async (req, res) => {
     const accessToken = resolveNonEmptyString(req.body?.accessToken);
     if (!code && !idToken && !accessToken) {
       return res.status(400).json({ error: "code, idToken, or accessToken is required" });
+    }
+
+    if (COGNITO_AUTH_ENABLED) {
+      if (!accessToken) {
+        return res.status(400).json({ error: "accessToken is required when Cognito is enabled" });
+      }
+      const refreshToken = resolveNonEmptyString(req.body?.refreshToken);
+      if (!refreshToken) {
+        return res.status(400).json({ error: "refreshToken is required when Cognito is enabled" });
+      }
+      const identity = await loadCognitoIdentityByAccessToken(accessToken);
+      const user = await ensureAuthUserByIdentity(identity);
+      return res.json({
+        data: issueCognitoAuthSession(user, {
+          accessToken,
+          refreshToken,
+          expiresIn: AUTH_ACCESS_TOKEN_EXPIRES_IN_SECONDS,
+        }),
+      });
     }
 
     let user = await ensureAuthUser(req);
@@ -364,8 +709,8 @@ app.post(["/v1/auth/callback", "/auth/callback"], async (req, res) => {
     const providedRefreshToken = resolveNonEmptyString(req.body?.refreshToken) ?? undefined;
     return res.json({ data: issueAuthSession(user, providedRefreshToken) });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "unknown error";
-    return res.status(500).json({ error: message });
+    const status = COGNITO_AUTH_ENABLED ? resolveCognitoErrorStatus(err) : 500;
+    return res.status(status).json({ error: resolveErrorMessage(err) });
   }
 });
 
@@ -375,17 +720,34 @@ app.post(["/v1/auth/refresh", "/auth/refresh"], async (req, res) => {
     if (!refreshToken) {
       return res.status(400).json({ error: "refreshToken is required" });
     }
+    if (COGNITO_AUTH_ENABLED) {
+      const tokenSet = await cognitoRefresh(refreshToken);
+      const identity = await loadCognitoIdentityByAccessToken(tokenSet.accessToken);
+      const user = await ensureAuthUserByIdentity(identity);
+      return res.json({ data: issueCognitoAuthSession(user, tokenSet) });
+    }
     const user = await ensureAuthUser(req);
     return res.json({ data: issueAuthSession(user, refreshToken) });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "unknown error";
-    return res.status(500).json({ error: message });
+    const status = COGNITO_AUTH_ENABLED ? resolveCognitoErrorStatus(err) : 500;
+    return res.status(status).json({ error: resolveErrorMessage(err) });
   }
 });
 
 app.post(["/v1/auth/logout", "/auth/logout"], async (req, res) => {
   try {
-    const hasRefreshToken = Boolean(resolveNonEmptyString(req.body?.refreshToken));
+    const refreshToken = resolveNonEmptyString(req.body?.refreshToken);
+    if (COGNITO_AUTH_ENABLED) {
+      const accessToken = resolveNonEmptyString(req.body?.accessToken) ?? resolveBearerAccessToken(req);
+      const revokedRefreshToken = await cognitoLogout(accessToken, refreshToken);
+      return res.json({
+        data: {
+          loggedOut: true,
+          revokedRefreshToken,
+        },
+      });
+    }
+    const hasRefreshToken = Boolean(refreshToken);
     return res.json({
       data: {
         loggedOut: true,
@@ -393,8 +755,8 @@ app.post(["/v1/auth/logout", "/auth/logout"], async (req, res) => {
       },
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "unknown error";
-    return res.status(500).json({ error: message });
+    const status = COGNITO_AUTH_ENABLED ? resolveCognitoErrorStatus(err) : 500;
+    return res.status(status).json({ error: resolveErrorMessage(err) });
   }
 });
 

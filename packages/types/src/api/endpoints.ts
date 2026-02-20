@@ -86,6 +86,21 @@ export type PostAuthCallbackRequest = {
 };
 export type PostAuthCallbackResponse = ApiResponse<AuthSessionData>;
 
+export type PostAuthSignupRequest = {
+  name?: string;
+  email: string;
+  password: string;
+  userId?: string;
+};
+export type PostAuthSignupResponse = ApiResponse<AuthSessionData>;
+
+export type PostAuthLoginRequest = {
+  email: string;
+  password: string;
+  userId?: string;
+};
+export type PostAuthLoginResponse = ApiResponse<AuthSessionData>;
+
 export type PostAuthRefreshRequest = {
   refreshToken: string;
   userId?: string;

@@ -154,6 +154,52 @@ Resources:
         - Key: Owner
           Value: yukanagatake
 
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub '${SystemId}-${Env}-user-pool'
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+        - Name: name
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+      UserPoolTags:
+        Owner: yukanagatake
+
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub '${SystemId}-${Env}-web-client'
+      UserPoolId: !Ref CognitoUserPool
+      GenerateSecret: false
+      PreventUserExistenceErrors: ENABLED
+      RefreshTokenValidity: 30
+      AccessTokenValidity: 1
+      IdTokenValidity: 1
+      TokenValidityUnits:
+        RefreshToken: days
+        AccessToken: hours
+        IdToken: hours
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+
   BackendFunctionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -184,6 +230,15 @@ Resources:
                 Resource:
                   - !GetAtt MainTable.Arn
                   - !Sub '${MainTable.Arn}/index/*'
+              - Effect: Allow
+                Action:
+                  - cognito-idp:SignUp
+                  - cognito-idp:AdminConfirmSignUp
+                  - cognito-idp:InitiateAuth
+                  - cognito-idp:GetUser
+                  - cognito-idp:GlobalSignOut
+                  - cognito-idp:RevokeToken
+                Resource: '*'
 
   BackendFunction:
     Type: AWS::Lambda::Function
@@ -196,6 +251,9 @@ Resources:
         Variables:
           TABLE_NAME: !Ref MainTable
           DATA_STORE_DRIVER: dynamo
+          COGNITO_USER_POOL_ID: !Ref CognitoUserPool
+          COGNITO_CLIENT_ID: !Ref CognitoUserPoolClient
+          COGNITO_REGION: !Ref AWS::Region
       Code:
         Fn::If:
           - UseS3Code
@@ -333,6 +391,12 @@ Outputs:
   BackendApiEndpoint:
     Description: API endpoint base URL
     Value: !Sub 'https://${BackendApi}.execute-api.${AWS::Region}.amazonaws.com/${Env}/v1'
+  CognitoUserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref CognitoUserPool
+  CognitoUserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref CognitoUserPoolClient
   MainTableName:
     Description: DynamoDB main table
     Value: !Ref MainTable
