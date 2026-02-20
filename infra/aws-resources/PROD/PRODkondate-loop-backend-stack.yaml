@@ -247,6 +247,8 @@ Resources:
       Runtime: !Ref LambdaRuntime
       Handler: !Ref LambdaHandler
       Role: !GetAtt BackendFunctionRole.Arn
+      MemorySize: 512
+      Timeout: 15
       Environment:
         Variables:
           TABLE_NAME: !Ref MainTable
