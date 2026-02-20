@@ -278,7 +278,10 @@ async function cognitoSignUpAndAuthenticate(
   email: string,
   password: string,
   name: string | null
-): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
+): Promise<{
+  identity: CognitoIdentity;
+  tokenSet: { accessToken: string; refreshToken: string; expiresIn: number };
+}> {
   const { client, userPoolId, clientId } = requireCognitoConfig();
   const signUpResult = await client.send(
     new SignUpCommand({
@@ -309,7 +312,28 @@ async function cognitoSignUpAndAuthenticate(
       },
     })
   );
-  return toCognitoSession(auth.AuthenticationResult);
+  const tokenSet = toCognitoSession(auth.AuthenticationResult);
+  const userId = resolveNonEmptyString(signUpResult.UserSub);
+  if (userId) {
+    return {
+      identity: {
+        userId,
+        email,
+        name,
+      },
+      tokenSet,
+    };
+  }
+
+  console.warn("[auth] Cognito signUp result did not include UserSub; fallback to GetUser.");
+  const identity = await loadCognitoIdentityByAccessToken(tokenSet.accessToken);
+  return {
+    identity: {
+      ...identity,
+      name: name ?? identity.name,
+    },
+    tokenSet,
+  };
 }
 
 async function cognitoLogin(
@@ -615,9 +639,8 @@ app.post(["/v1/auth/signup", "/auth/signup"], async (req, res) => {
 
     const email = normalizeEmail(emailRaw);
     if (COGNITO_AUTH_ENABLED) {
-      const tokenSet = await cognitoSignUpAndAuthenticate(email, password, name);
-      const identity = await loadCognitoIdentityByAccessToken(tokenSet.accessToken);
-      const user = await ensureAuthUserByIdentity({ ...identity, name: name ?? identity.name });
+      const { identity, tokenSet } = await cognitoSignUpAndAuthenticate(email, password, name);
+      const user = await ensureAuthUserByIdentity(identity);
       return res.json({ data: issueCognitoAuthSession(user, tokenSet) });
     }
 
