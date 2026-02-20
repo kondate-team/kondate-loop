@@ -14,6 +14,7 @@ AWS / CloudFormation のインフラ賁E��向け README、E
 - Backend stack names: dev kondate-loop-backend-stack, prod PRODkondate-loop-backend-stack.
 - API Gateway includes /v1/{proxy+} and root /{proxy+} (Lambda proxy). After stabilization, expose major endpoints as explicit resources.
 - Backend Lambda code bucket is created by infra stack and exported as ${SystemId}-${Env}-backend-code-bucket-name.
+- `aws-resources/kondate-loop-iam-stack.yaml` includes `CloudFrontDistributionId` (default `E1COUXO1CLEN6E`) and allows `cloudfront:CreateInvalidation` for `DevAccessRole`.
 
 ## リソース別の“現実的な命名”侁E
 
