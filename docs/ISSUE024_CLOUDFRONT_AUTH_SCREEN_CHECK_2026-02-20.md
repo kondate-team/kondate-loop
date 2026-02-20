@@ -14,6 +14,9 @@
   - `VITE_API_USE_MOCK` 未指定時のデフォルトを環境別に変更:
     - `DEV` では `"true"`
     - `PROD`（CloudFront含む）では `"false"`
+- `apps/web/src/services/auth.ts`
+  - `AUTH_USE_MOCK = API_USE_MOCK && import.meta.env.DEV` を導入。
+  - 認証系 (`login/signup/refresh/logout/callback/me`) は `PROD` で必ず実APIを使用するよう固定。
 
 ## 目的
 - 環境変数が未指定でも、CloudFront配信画面は実API接続を既定値にする。

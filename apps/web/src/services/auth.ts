@@ -4,6 +4,7 @@ import type { ApiUser, ApiUserRole } from "@/types/api"
 
 const AUTH_USER_ID_KEY = "kondate.auth.userId"
 const AUTH_REFRESH_TOKEN_KEY = "kondate.auth.refreshToken"
+const AUTH_USE_MOCK = API_USE_MOCK && import.meta.env.DEV
 
 export type AuthSession = {
   user: ApiUser
@@ -124,7 +125,7 @@ function toAuthSession(payload: AuthSessionResponseBody): AuthSession {
 }
 
 export async function authCallback(request: CallbackRequest): Promise<AuthSession> {
-  if (API_USE_MOCK) {
+  if (AUTH_USE_MOCK) {
     return {
       user: { id: "mock-user", name: request.name ?? "Mock User", role: "user" },
       accessToken: "mock-access-token",
@@ -146,7 +147,7 @@ export async function authCallback(request: CallbackRequest): Promise<AuthSessio
 }
 
 export async function refreshSession(request?: Partial<RefreshRequest>): Promise<AuthSession> {
-  if (API_USE_MOCK) {
+  if (AUTH_USE_MOCK) {
     return {
       user: { id: "mock-user", name: "Mock User", role: "user" },
       accessToken: "mock-access-token",
@@ -177,7 +178,7 @@ export async function refreshSession(request?: Partial<RefreshRequest>): Promise
 }
 
 export async function login(email: string, password: string): Promise<AuthSession> {
-  if (API_USE_MOCK) {
+  if (AUTH_USE_MOCK) {
     return {
       user: { id: "mock-user", name: "Mock User", role: "user" },
       accessToken: "mock-access-token",
@@ -203,7 +204,7 @@ export async function login(email: string, password: string): Promise<AuthSessio
 }
 
 export async function signup(name: string, email: string, password: string): Promise<AuthSession> {
-  if (API_USE_MOCK) {
+  if (AUTH_USE_MOCK) {
     return {
       user: { id: "mock-user", name: name || "Mock User", role: "user" },
       accessToken: "mock-access-token",
@@ -230,7 +231,7 @@ export async function signup(name: string, email: string, password: string): Pro
 }
 
 export async function changeRole(role: ApiUserRole): Promise<ApiUser> {
-  if (API_USE_MOCK) {
+  if (AUTH_USE_MOCK) {
     return { id: "mock-user", name: "Mock User", role }
   }
 
@@ -246,7 +247,7 @@ export async function changeRole(role: ApiUserRole): Promise<ApiUser> {
 }
 
 export async function logout(refreshToken?: string): Promise<void> {
-  if (API_USE_MOCK) {
+  if (AUTH_USE_MOCK) {
     clearSession()
     return
   }
