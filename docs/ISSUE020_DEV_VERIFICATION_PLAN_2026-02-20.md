@@ -56,3 +56,35 @@
 - 備考:
   - 本ドキュメントは「今後の再実行手順」として保持する。
   - 実測結果は必要に応じて追記する。
+
+### 5-1. 実測結果（2026-02-20）
+
+#### 3-1 CI確認
+- `dev` 最新SHA: `aa08659dbdc12651aafda66134287afb6e5a20b9`
+- `Deploy`:
+  - Run: `22214962110`
+  - 結果: `success`
+  - `backend-dev` 内の `Deploy CloudFormation (dev)` と `Smoke test backend API -> DynamoDB (dev)` が成功
+- `Deploy dev to GitHub Pages`:
+  - Run: `22214962092`
+  - 結果: `success`
+
+#### 3-2 API手動確認（API Gateway経由）
+- 使用エンドポイント:
+  - `https://9xgpv0z4r7.execute-api.ap-northeast-1.amazonaws.com/dev/v1`
+- 結果（すべて 2xx）:
+  - `POST /auth/callback` → `200`
+  - `POST /auth/refresh` → `200`
+  - `POST /auth/logout` → `200`
+  - `GET /auth/me` → `200`
+- 返却値確認:
+  - callback/refresh で `accessToken` と `refreshToken` を確認
+  - logout で `loggedOut=true` / `revokedRefreshToken=true` を確認
+
+#### 3-3 データ反映確認
+- `POST /recipes`（`userId=verify-user-20260220`）→ `201`
+- `GET /recipes?userId=verify-user-20260220` → `200`
+- 作成した `recipeId` が一覧で取得できることを確認（反映OK）
+
+#### 3-4 フロント確認
+- 未実施（必要時に別途実施）
