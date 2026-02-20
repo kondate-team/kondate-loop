@@ -87,4 +87,12 @@
 - 作成した `recipeId` が一覧で取得できることを確認（反映OK）
 
 #### 3-4 フロント確認
-- 未実施（必要時に別途実施）
+- 実施内容:
+  - `VITE_API_USE_MOCK=false` / `VITE_API_BASE_URL=https://9xgpv0z4r7.execute-api.ap-northeast-1.amazonaws.com/dev/v1` を設定して `apps/web` を起動
+  - `http://127.0.0.1:4173/` へアクセスして配信確認
+  - バンドル/ソース上で `/v1/auth/callback`, `/v1/auth/refresh`, `/v1/auth/logout` への接続を確認
+  - API側の CORS を `Origin: http://localhost:5173` 付きで確認
+- 結果:
+  - `GET http://127.0.0.1:4173/` → `200`（`/@vite/client` と `<div id=\"root\"></div>` を含む）
+  - `OPTIONS /v1/auth/callback`（Origin付き）→ `204`、`access-control-allow-origin: http://localhost:5173`
+  - `GET /v1/auth/me`（Origin付き）→ `200`、`access-control-allow-origin: http://localhost:5173`
