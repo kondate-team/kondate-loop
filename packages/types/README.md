@@ -173,6 +173,9 @@ packages/types/
 | エンドポイント | Request型 | Response型 |
 |---------------|-----------|------------|
 | `GET /v1/auth/me` | - | `GetAuthMeResponse` |
+| `POST /v1/auth/callback` | `PostAuthCallbackRequest` | `PostAuthCallbackResponse` |
+| `POST /v1/auth/refresh` | `PostAuthRefreshRequest` | `PostAuthRefreshResponse` |
+| `POST /v1/auth/logout` | `PostAuthLogoutRequest` | `PostAuthLogoutResponse` |
 | `GET /v1/plan` | - | `GetPlanResponse` |
 | `POST /v1/plan/select-set` | `PostPlanSelectSetRequest` | `PostPlanSelectSetResponse` |
 | `GET /v1/recipes` | `GetRecipesParams` | `GetRecipesResponse` |

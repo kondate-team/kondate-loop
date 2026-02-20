@@ -47,6 +47,30 @@ async function waitForHealth(maxRetry = 30) {
 }
 
 async function runSmoke() {
+  const authCallback = await request("POST", "/v1/auth/callback", {
+    userId,
+    email: "smoke-user@example.com",
+    code: "smoke-oauth-code",
+    name: "Smoke User",
+  });
+  assert.strictEqual(authCallback.status, 200, "auth callback failed");
+  assert.ok(authCallback.json?.data?.accessToken, "auth callback accessToken not returned");
+  assert.ok(authCallback.json?.data?.refreshToken, "auth callback refreshToken not returned");
+
+  const authRefresh = await request("POST", "/v1/auth/refresh", {
+    userId,
+    email: "smoke-user@example.com",
+    refreshToken: authCallback.json?.data?.refreshToken,
+  });
+  assert.strictEqual(authRefresh.status, 200, "auth refresh failed");
+  assert.ok(authRefresh.json?.data?.accessToken, "auth refresh accessToken not returned");
+
+  const authLogout = await request("POST", "/auth/logout", {
+    refreshToken: authCallback.json?.data?.refreshToken,
+  });
+  assert.strictEqual(authLogout.status, 200, "auth logout failed");
+  assert.strictEqual(authLogout.json?.data?.loggedOut, true, "auth logout response is invalid");
+
   const createRecipe = await request("POST", "/v1/recipes", {
     userId,
     title: "Smoke Recipe",

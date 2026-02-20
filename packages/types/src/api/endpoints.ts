@@ -65,6 +65,39 @@ import type {
 
 export type GetAuthMeResponse = ApiResponse<UserPublic>;
 
+export type AuthSessionData = {
+  user: UserPublic & { updatedAt?: string | null };
+  accessToken: string;
+  refreshToken: string;
+  tokenType: "Bearer";
+  expiresIn: number;
+  issuedAt: string;
+};
+
+export type PostAuthCallbackRequest = {
+  code?: string;
+  idToken?: string;
+  accessToken?: string;
+  refreshToken?: string;
+  userId?: string;
+  email?: string;
+  name?: string;
+  avatarUrl?: string | null;
+};
+export type PostAuthCallbackResponse = ApiResponse<AuthSessionData>;
+
+export type PostAuthRefreshRequest = {
+  refreshToken: string;
+  userId?: string;
+  email?: string;
+};
+export type PostAuthRefreshResponse = ApiResponse<AuthSessionData>;
+
+export type PostAuthLogoutRequest = {
+  refreshToken?: string;
+};
+export type PostAuthLogoutResponse = ApiResponse<{ loggedOut: boolean; revokedRefreshToken: boolean }>;
+
 // ============================================================
 // User
 // ============================================================
