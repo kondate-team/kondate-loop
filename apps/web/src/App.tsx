@@ -26,10 +26,13 @@ import {
 import { API_USE_MOCK } from "@/api/config"
 import { purchaseContent, registerPaymentMethod } from "@/api/payment"
 import {
+  login as loginWithApi,
+  logout as logoutWithApi,
   listCatalogRecipes,
   listCatalogSets,
   listRecipeBookRecipes,
   listRecipeBookSets,
+  signup as signupWithApi,
 } from "@/services"
 import { StripeCardInput } from "@/components/StripeCardInput"
 import { Loader2 } from "lucide-react"
@@ -461,7 +464,29 @@ export default function App() {
       navigate("auth-error")
       return
     }
-    completeLogin(false)
+
+    const extractErrorMessage = (error: unknown, fallback: string) => {
+      if (!(error instanceof Error) || !error.message) return fallback
+      try {
+        const parsed = JSON.parse(error.message) as { error?: string }
+        return parsed.error?.trim() ? parsed.error : fallback
+      } catch {
+        return error.message.trim() || fallback
+      }
+    }
+
+    void (async () => {
+      try {
+        await loginWithApi(email.trim(), password)
+        completeLogin(false)
+      } catch (error: unknown) {
+        setAuthError({
+          title: "ログインに失敗しました",
+          message: extractErrorMessage(error, "認証に失敗しました。入力内容を確認してください。"),
+        })
+        navigate("auth-error")
+      }
+    })()
   }
 
   const handleSignup = (name: string, email: string, password: string) => {
@@ -473,12 +498,40 @@ export default function App() {
       navigate("auth-error")
       return
     }
-    completeLogin(true)
+
+    const extractErrorMessage = (error: unknown, fallback: string) => {
+      if (!(error instanceof Error) || !error.message) return fallback
+      try {
+        const parsed = JSON.parse(error.message) as { error?: string }
+        return parsed.error?.trim() ? parsed.error : fallback
+      } catch {
+        return error.message.trim() || fallback
+      }
+    }
+
+    void (async () => {
+      try {
+        await signupWithApi(name.trim(), email.trim(), password)
+        completeLogin(true)
+      } catch (error: unknown) {
+        setAuthError({
+          title: "登録に失敗しました",
+          message: extractErrorMessage(error, "アカウント登録に失敗しました。入力内容を確認してください。"),
+        })
+        navigate("auth-error")
+      }
+    })()
   }
 
   const handleLogout = () => {
-    setIsAuthenticated(false)
-    navigate("auth", true)
+    void (async () => {
+      try {
+        await logoutWithApi()
+      } finally {
+        setIsAuthenticated(false)
+        navigate("auth", true)
+      }
+    })()
   }
 
   const handlePwaInstall = async () => {
