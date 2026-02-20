@@ -332,10 +332,20 @@ jobs:
 
       - name: Build frontend
         run: |
+          set -euo pipefail
           npm ci --include=optional
           node -e "require.resolve('@rollup/rollup-linux-x64-gnu')" || npm -w apps/web i --no-save @rollup/rollup-linux-x64-gnu
           npm run build --workspace=packages/types
-          npm run build --workspace=apps/web
+          DEV_API_BASE_URL="${{ vars.VITE_API_BASE_URL_DEV }}"
+          if [ -z "$DEV_API_BASE_URL" ]; then
+            DEV_API_BASE_URL=$(aws cloudformation describe-stacks \
+              --stack-name "kondate-loop-backend-stack" \
+              --query "Stacks[0].Outputs[?OutputKey=='BackendApiEndpoint'].OutputValue" \
+              --output text)
+            DEV_API_BASE_URL="${DEV_API_BASE_URL%/v1}"
+          fi
+          echo "VITE_API_BASE_URL=$DEV_API_BASE_URL"
+          VITE_API_USE_MOCK=false VITE_API_BASE_URL="$DEV_API_BASE_URL" npm run build --workspace=apps/web
 
       - name: Upload frontend to S3 (dev)
         run: |
