@@ -126,3 +126,58 @@
 - Added datastore support (file + dynamo): payment methods, purchases, subscriptions, notifications, push tokens, notification settings.
 - Wired existing endpoints to persist payment/subscription/purchase data where applicable.
 - Local verification: `npm run build --workspace=apps/api` and `npm run smoke:api --workspace=apps/api` passed.
+- Branch: `feature/015-api-core-gap`
+- Implemented endpoints:
+  - `POST /v1/plan/advance`
+  - `DELETE /v1/shopping-list/items/{id}`
+  - `POST /v1/import/parse`
+- Local verification: `npm run smoke:api --workspace=apps/api` passed.
+
+- Branch: `feature/016-api-auth-user`
+- Implemented endpoints:
+  - `GET /v1/auth/me`
+  - `PATCH /v1/me`
+- Added profile handling in datastore (`name`, `role`, `avatarUrl`, `createdAt`, `updatedAt`) for file + dynamo.
+- Local verification: branch workflow passed on push (`feature/016-api-auth-user`).
+
+- Branch: `feature/017-api-catalog-share`
+- Implemented endpoints:
+  - `GET /v1/catalog/recipes`
+  - `GET /v1/catalog/sets`
+  - `GET /v1/catalog/recipes/{id}`
+  - `GET /v1/catalog/sets/{id}`
+  - `POST /v1/catalog/recipes/{id}/save`
+  - `DELETE /v1/catalog/recipes/{id}/save`
+  - `POST /v1/catalog/sets/{id}/save`
+  - `DELETE /v1/catalog/sets/{id}/save`
+  - `POST /v1/catalog/recipes/{id}/purchase`
+  - `POST /v1/catalog/sets/{id}/purchase`
+  - `POST /v1/share`
+  - `GET /v1/share/recipe/{id}`
+  - `GET /v1/share/set/{id}`
+- Local verification: branch workflow passed on push (`feature/017-api-catalog-share`).
+
+- Branch: `feature/019-api-payment-read-notification`（2026-02-20 更新）
+- 認証エンドポイントを実装:
+  - `POST /v1/auth/callback`
+  - `POST /v1/auth/refresh`
+  - `POST /v1/auth/logout`
+- 互換用エイリアスを追加:
+  - `POST /auth/callback`
+  - `POST /auth/refresh`
+  - `POST /auth/logout`
+- ローカル確認: `npm run build --workspace=apps/api` と `npm run smoke:api --workspace=apps/api` が成功。
+
+- Branch: `feature/019-api-payment-read-notification`（2026-02-20 フロント/型 更新）
+- フロント認証サービス（`apps/web/src/services/auth.ts`）を以下に接続:
+  - `POST /v1/auth/callback`
+  - `POST /v1/auth/refresh`
+  - `POST /v1/auth/logout`
+- 共有API型（`packages/types/src/api/endpoints.ts`）を追加:
+  - `PostAuthCallbackRequest` / `PostAuthCallbackResponse`
+  - `PostAuthRefreshRequest` / `PostAuthRefreshResponse`
+  - `PostAuthLogoutRequest` / `PostAuthLogoutResponse`
+- ローカル確認:
+  - `npm run build --workspace=packages/types` が成功。
+  - `npm run build --workspace=apps/web` 初回失敗の原因は Rollup の optional 依存（`@rollup/rollup-win32-x64-msvc`）不足。
+  - `apps/web` の optionalDependencies に `@rollup/rollup-win32-x64-msvc` を追加後、再ビルド成功。

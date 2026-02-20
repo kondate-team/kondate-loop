@@ -84,6 +84,49 @@ function toMeResponse(user: UserRecord) {
   };
 }
 
+type AuthSessionResponse = {
+  user: ReturnType<typeof toMeResponse>;
+  accessToken: string;
+  refreshToken: string;
+  tokenType: "Bearer";
+  expiresIn: number;
+  issuedAt: string;
+};
+
+const AUTH_ACCESS_TOKEN_EXPIRES_IN_SECONDS = Number(
+  process.env.AUTH_ACCESS_TOKEN_EXPIRES_IN_SECONDS ?? 60 * 60
+);
+
+function resolveNonEmptyString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+async function ensureAuthUser(req: express.Request): Promise<UserRecord> {
+  const userId = resolveUserId(req);
+  const email = resolveUserEmail(req, userId);
+  let user = await store.getUser(userId);
+  if (!user) {
+    user = await store.upsertUser(userId, email);
+  } else if (!user.email) {
+    user = (await store.updateUser(userId, { email })) ?? user;
+  }
+  return user;
+}
+
+function issueAuthSession(user: UserRecord, refreshToken?: string): AuthSessionResponse {
+  const issuedAt = nowIso();
+  return {
+    user: toMeResponse(user),
+    accessToken: `access_${randomUUID()}`,
+    refreshToken: refreshToken ?? `refresh_${randomUUID()}`,
+    tokenType: "Bearer",
+    expiresIn: AUTH_ACCESS_TOKEN_EXPIRES_IN_SECONDS,
+    issuedAt,
+  };
+}
+
 function buildShareUrl(targetType: "recipe" | "set", targetId: string): string {
   return `${SHARE_BASE_URL}/share/${targetType}/${targetId}`;
 }
@@ -259,15 +302,68 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 
 app.get("/v1/auth/me", async (req, res) => {
   try {
-    const userId = resolveUserId(req);
-    const email = resolveUserEmail(req, userId);
-    let user = await store.getUser(userId);
-    if (!user) {
-      user = await store.upsertUser(userId, email);
-    } else if (!user.email) {
-      user = (await store.updateUser(userId, { email })) ?? user;
-    }
+    const user = await ensureAuthUser(req);
     return res.json({ data: toMeResponse(user) });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.post(["/v1/auth/callback", "/auth/callback"], async (req, res) => {
+  try {
+    const code = resolveNonEmptyString(req.body?.code);
+    const idToken = resolveNonEmptyString(req.body?.idToken);
+    const accessToken = resolveNonEmptyString(req.body?.accessToken);
+    if (!code && !idToken && !accessToken) {
+      return res.status(400).json({ error: "code, idToken, or accessToken is required" });
+    }
+
+    let user = await ensureAuthUser(req);
+    const patch: Partial<UserRecord> = {};
+    const name = resolveNonEmptyString(req.body?.name);
+    if (name && name.length <= 50) {
+      patch.name = name;
+    }
+    const avatarUrl = req.body?.avatarUrl;
+    if (avatarUrl === null || (typeof avatarUrl === "string" && avatarUrl.length <= 500)) {
+      patch.avatarUrl = avatarUrl;
+    }
+    if (Object.keys(patch).length > 0) {
+      user = (await store.updateUser(user.userId, patch)) ?? user;
+    }
+
+    const providedRefreshToken = resolveNonEmptyString(req.body?.refreshToken) ?? undefined;
+    return res.json({ data: issueAuthSession(user, providedRefreshToken) });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.post(["/v1/auth/refresh", "/auth/refresh"], async (req, res) => {
+  try {
+    const refreshToken = resolveNonEmptyString(req.body?.refreshToken);
+    if (!refreshToken) {
+      return res.status(400).json({ error: "refreshToken is required" });
+    }
+    const user = await ensureAuthUser(req);
+    return res.json({ data: issueAuthSession(user, refreshToken) });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    return res.status(500).json({ error: message });
+  }
+});
+
+app.post(["/v1/auth/logout", "/auth/logout"], async (req, res) => {
+  try {
+    const hasRefreshToken = Boolean(resolveNonEmptyString(req.body?.refreshToken));
+    return res.json({
+      data: {
+        loggedOut: true,
+        revokedRefreshToken: hasRefreshToken,
+      },
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
     return res.status(500).json({ error: message });
