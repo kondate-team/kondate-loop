@@ -1,9 +1,13 @@
 import { API_USE_MOCK } from "@/api/config"
 import { apiFetch } from "@/api/client"
 import type { ApiUser, ApiUserRole } from "@/types/api"
-
-const AUTH_USER_ID_KEY = "kondate.auth.userId"
-const AUTH_REFRESH_TOKEN_KEY = "kondate.auth.refreshToken"
+import {
+  clearAuthSessionStorage,
+  persistAuthSession,
+  readStoredAccessToken,
+  readStoredRefreshToken,
+  readStoredUserId,
+} from "./authStorage"
 const AUTH_USE_MOCK = API_USE_MOCK && import.meta.env.DEV
 
 export type AuthSession = {
@@ -72,37 +76,11 @@ function resolveUserIdFromEmail(email: string): string {
 }
 
 function persistSession(session: AuthSession) {
-  try {
-    window.localStorage.setItem(AUTH_USER_ID_KEY, session.user.id)
-    window.localStorage.setItem(AUTH_REFRESH_TOKEN_KEY, session.refreshToken)
-  } catch {
-    // Ignore storage failures.
-  }
+  persistAuthSession(session)
 }
 
 function clearSession() {
-  try {
-    window.localStorage.removeItem(AUTH_USER_ID_KEY)
-    window.localStorage.removeItem(AUTH_REFRESH_TOKEN_KEY)
-  } catch {
-    // Ignore storage failures.
-  }
-}
-
-function readStoredUserId(): string | null {
-  try {
-    return window.localStorage.getItem(AUTH_USER_ID_KEY)
-  } catch {
-    return null
-  }
-}
-
-function readStoredRefreshToken(): string | null {
-  try {
-    return window.localStorage.getItem(AUTH_REFRESH_TOKEN_KEY)
-  } catch {
-    return null
-  }
+  clearAuthSessionStorage()
 }
 
 function toAuthSession(payload: AuthSessionResponseBody): AuthSession {
@@ -256,6 +234,7 @@ export async function logout(refreshToken?: string): Promise<void> {
     method: "POST",
     body: JSON.stringify({
       refreshToken: refreshToken ?? readStoredRefreshToken() ?? undefined,
+      accessToken: readStoredAccessToken() ?? undefined,
     }),
   })
   clearSession()

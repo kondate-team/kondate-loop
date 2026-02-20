@@ -63,3 +63,10 @@
   - 多くの `/v1/*` は従来通り `userId` パラメータ運用のまま。
 - Hosted UI / OAuthコード交換フローは未実装。
   - 本実装は email+password の Cognito 認証をバックエンド経由で扱う方式。
+
+## Follow-up update (2026-02-20)
+- Added Cognito JWT guard middleware in `apps/api/src/server.ts`.
+- When Cognito env is configured, all `/v1/*` business routes now require `Authorization: Bearer <accessToken>` except health, auth bootstrap endpoints (`/v1/auth/signup|login|callback|refresh|logout` and `/auth/*`), and public share read endpoints (`/v1/share/recipe/:id`, `/v1/share/set/:id`).
+- Request identity for business APIs is now resolved from verified token claims (`resolveUserId` / `resolveUserEmail`) to prevent spoofed `userId` in body/query/header.
+- Frontend API client now automatically adds bearer token from local storage (`apps/web/src/api/client.ts` + `apps/web/src/services/authStorage.ts`).
+- Remaining scope: API Gateway-level Cognito Authorizer and Hosted UI/OAuth code-exchange flow.

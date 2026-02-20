@@ -100,6 +100,9 @@ function nowIso(): string {
 }
 
 function resolveUserId(req: express.Request): string {
+  if (req.authIdentity?.userId) {
+    return req.authIdentity.userId;
+  }
   const bodyUserId = typeof req.body?.userId === "string" ? req.body.userId : "";
   const queryUserId = typeof req.query?.userId === "string" ? req.query.userId : "";
   const headerUserId = typeof req.headers["x-user-id"] === "string" ? req.headers["x-user-id"] : "";
@@ -107,6 +110,9 @@ function resolveUserId(req: express.Request): string {
 }
 
 function resolveUserEmail(req: express.Request, userId: string): string {
+  if (req.authIdentity?.email) {
+    return req.authIdentity.email;
+  }
   const bodyEmail = typeof req.body?.email === "string" ? req.body.email : "";
   const queryEmail = typeof req.query?.email === "string" ? req.query.email : "";
   const headerEmail =
@@ -149,9 +155,33 @@ type CognitoIdentity = {
   name: string | null;
 };
 
+declare global {
+  namespace Express {
+    interface Request {
+      authIdentity?: CognitoIdentity;
+    }
+  }
+}
+
 const AUTH_ACCESS_TOKEN_EXPIRES_IN_SECONDS = Number(
   process.env.AUTH_ACCESS_TOKEN_EXPIRES_IN_SECONDS ?? 60 * 60
 );
+
+const AUTH_EXEMPT_PATHS = new Set<string>([
+  "/health",
+  "/auth/signup",
+  "/auth/login",
+  "/auth/callback",
+  "/auth/refresh",
+  "/auth/logout",
+  "/v1/auth/signup",
+  "/v1/auth/login",
+  "/v1/auth/callback",
+  "/v1/auth/refresh",
+  "/v1/auth/logout",
+]);
+
+const AUTH_EXEMPT_PREFIXES = ["/v1/share/recipe/", "/v1/share/set/"];
 
 function resolveNonEmptyString(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -507,6 +537,38 @@ function buildDefaultCategories(userId: string, scope: CategoryScope): CategoryR
   }));
 }
 
+function isAuthExemptRequest(req: express.Request): boolean {
+  if (req.method === "OPTIONS") return true;
+  if (AUTH_EXEMPT_PATHS.has(req.path)) return true;
+  return AUTH_EXEMPT_PREFIXES.some((prefix) => req.path.startsWith(prefix));
+}
+
+async function authenticateCognitoRequest(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+) {
+  if (!COGNITO_AUTH_ENABLED || isAuthExemptRequest(req)) {
+    next();
+    return;
+  }
+
+  const accessToken = resolveBearerAccessToken(req);
+  if (!accessToken) {
+    res.status(401).json({ error: "Authorization bearer token is required" });
+    return;
+  }
+
+  try {
+    const identity = await loadCognitoIdentityByAccessToken(accessToken);
+    req.authIdentity = identity;
+    await ensureAuthUserByIdentity(identity);
+    next();
+  } catch (err: unknown) {
+    res.status(resolveCognitoErrorStatus(err)).json({ error: resolveErrorMessage(err) });
+  }
+}
+
 app.post(
   "/webhooks/stripe",
   express.raw({ type: "application/json" }),
@@ -603,17 +665,17 @@ app.use(
   })
 );
 app.use(express.json());
+app.use(authenticateCognitoRequest);
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
 app.get("/v1/auth/me", async (req, res) => {
   try {
     if (COGNITO_AUTH_ENABLED) {
-      const accessToken = resolveBearerAccessToken(req);
-      if (!accessToken) {
+      const identity = req.authIdentity;
+      if (!identity) {
         return res.status(401).json({ error: "Authorization bearer token is required" });
       }
-      const identity = await loadCognitoIdentityByAccessToken(accessToken);
       const user = await ensureAuthUserByIdentity(identity);
       return res.json({ data: toMeResponse(user) });
     }
